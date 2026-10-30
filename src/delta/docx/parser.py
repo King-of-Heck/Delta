@@ -201,6 +201,9 @@ def _runs(el, ctx: _Ctx, para_rpr: dict, out: list[Run], state: dict):
                                                        "field_text": "".join(fld["result"])})))
                             ctx.raw_len += len(token)
                             state["text_seen"] = True
+                        elif (number := ctx.counter.listnum(fld["instr"])) is not None:
+                            buf.append(number)
+                            state["text_seen"] = True
                         state["field"] = fld = None
                 elif xt == _W_instrText:
                     if fld is not None and fld["phase"] == "instr":
