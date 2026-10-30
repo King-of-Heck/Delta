@@ -139,6 +139,13 @@ def test_the_report_says_what_a_mixed_compare_left_out():
             "were not compared.") in report_lines(report_info(compare(a, b), "a", "b", "full"))
 
 
+def test_a_word_footnotes_line_breaks_are_separate_paragraphs():
+    w = _word(_para("x"))
+    w.footnotes = {1: [_para("Choose one:\nAn increase;\nA decrease.")]}
+    a, _ = level(w, _pdf(_para("x")))
+    assert [p.text for p in a.footnotes[1]] == ["Choose one:", "An increase;", "A decrease."]
+
+
 def test_a_cells_plain_lines_read_as_one_on_both_sides():
     cells = "<w:p><w:r><w:t>Name:</w:t><w:br/><w:t>Title:</w:t></w:r></w:p>" + P("Date:") + P("") + P("(a) Item")
     body = f"<w:tbl><w:tr><w:tc>{cells}</w:tc></w:tr></w:tbl>"

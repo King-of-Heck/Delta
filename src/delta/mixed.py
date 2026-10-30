@@ -51,11 +51,30 @@ def _all_paragraphs(doc: Document):
 def _word_as_printed(source: Document) -> Document:
     word = copy.deepcopy(source)
     word.parts, word.comments, word.comment_anchors = {}, {}, {}
+    for notes in (word.footnotes, word.endnotes):
+        for key, blocks in notes.items():
+            notes[key] = [q for b in blocks for q in _split_lines(b)]
     for p in _all_paragraphs(word):
         _contents_number(p)
         p.runs = [replace(r, text=r.text.upper()) if (r.props.caps or r.props.small_caps) and r.props.field is None
                   else r for r in p.runs]
     return word
+
+
+def _split_lines(block) -> list:
+    """A note's manual line breaks as the separate paragraphs a PDF's note is read into."""
+    if not isinstance(block, Paragraph) or not any(_LINE.search(r.text) for r in block.runs):
+        return [block]
+    lines, runs = [], []
+    for r in block.runs:
+        for i, part in enumerate(_LINE.split(r.text)):
+            if i:
+                lines.append(runs)
+                runs = []
+            if part or r.props.note is not None:
+                runs.append(replace(r, text=part))
+    lines.append(runs)
+    return [Paragraph(rs, block.props, block.num if i == 0 else None) for i, rs in enumerate(lines) if rs]
 
 
 def _drop_page_titles(pdf: Document, source: Document, word: Document) -> None:
