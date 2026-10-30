@@ -24,12 +24,8 @@ def _roman(n: int) -> str:
 
 
 def _letters(n: int, upper: bool) -> str:
-    out = ""
-    while n > 0:
-        n -= 1
-        out = chr((65 if upper else 97) + n % 26) + out
-        n //= 26
-    return out
+    # Word: a..z, then aa..zz (the same letter repeated), so 28 -> "bb"
+    return chr((65 if upper else 97) + (n - 1) % 26) * ((n - 1) // 26 + 1)
 
 
 def fmt_num(n: int, fmt: str) -> str:
