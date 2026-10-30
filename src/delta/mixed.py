@@ -24,7 +24,7 @@ _LINE = re.compile(r"[\n\v]")
 class _Numbers:
     """What Word's own numbering says a leading number can look like."""
     exact: list[str]             # longest first
-    letters: set[str]            # one character: taken only on a hanging line, else "A contractor" is a number
+    letters: set[str]            # one character: only a PDF's hanging line, else "A contractor" is a number
     words: dict[str, str]        # "SECTION" -> "Section"
 
 
@@ -36,7 +36,7 @@ def level(a: Document, b: Document) -> tuple[Document, Document]:
     for doc in (word, pdf):
         for p in _all_paragraphs(doc):
             _bullets(p)
-            _lift(p, numbers)
+            _lift(p, numbers, doc is pdf and p.props.ind_hanging_pt > 0)
         _join_cells(doc.blocks)
     return (word, pdf) if b.source_kind == "pdf" else (pdf, word)
 
@@ -126,7 +126,7 @@ def _bullets(p: Paragraph) -> None:
     p.runs = [replace(r, text=r.text.translate(_BULLETS)) if r.props.field is None else r for r in p.runs]
 
 
-def _leading_number(text: str, numbers: _Numbers, hanging: bool) -> tuple[str, int] | None:
+def _leading_number(text: str, numbers: _Numbers, letters: bool) -> tuple[str, int] | None:
     """(the number as it will be held, its length in `text`), or None."""
     for known in numbers.exact:
         if text.startswith(known) and (len(text) == len(known) or text[len(known)] in _SPACE):
@@ -134,18 +134,18 @@ def _leading_number(text: str, numbers: _Numbers, hanging: bool) -> tuple[str, i
     m = _WORDED.match(text)
     if m and m[1].upper() in numbers.words:
         return f"{numbers.words[m[1].upper()]} {m[2]}", m.end()
-    if hanging and text[:1] in numbers.letters and text[1:2] in _SPACE and len(text) > 1:
+    if letters and text[:1] in numbers.letters and text[1:2] in _SPACE and len(text) > 1:
         return text[0], 1
     m = _SHAPE.match(text)
     return (m[1], m.end()) if m else None
 
 
-def _lift(p: Paragraph, numbers: _Numbers) -> None:
+def _lift(p: Paragraph, numbers: _Numbers, letters: bool) -> None:
     if p.num is not None or not p.runs:
         return
     text = "".join(r.text for r in p.runs)
     body = text.lstrip(_SPACE)
-    found = _leading_number(body, numbers, p.props.ind_hanging_pt > 0)
+    found = _leading_number(body, numbers, letters)
     if found is None:
         return
     number, length = found

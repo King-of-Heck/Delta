@@ -58,6 +58,12 @@ def test_a_one_letter_number_needs_a_hanging_line():
     assert (b.blocks[1].num.marker, b.blocks[1].text) == ("A", "For the purpose")
 
 
+def test_a_one_letter_opening_word_in_word_stays_text():
+    typed = Paragraph([Run("A copy of the notice", RunProps())], ParaProps(ind_hanging_pt=18.0))
+    a, _ = level(_word(_para("x", _num("A")), typed), _pdf(_para("x")))
+    assert (a.blocks[1].num, a.blocks[1].text) == (None, "A copy of the notice")
+
+
 def test_a_line_that_is_words_page_header_is_not_body_text():
     w = _word(_para("Body line"), _para("Kept title"))
     w.parts = {"header1.xml": [_para("Form 1"), _para("Kept title")]}
