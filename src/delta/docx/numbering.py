@@ -12,7 +12,7 @@ BULLETS = ["\u2022", "\u25e6", "\u25aa", "\u2023", "\u00b7"]  # SorkWhare's BULL
 _ROMAN = [(1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"), (50, "l"),
           (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")]
 _PH = re.compile(r"%(\d+)")
-_LISTNUM = re.compile(r'\s*LISTNUM\s+"?([^"\\]+?)"?\s*(?:\\l\s*(\d+))?\s*$')
+_LISTNUM = re.compile(r'\s*LISTNUM\s+"?([^"\\]+?)"?\s*(\\.*)?$')
 
 
 def _roman(n: int) -> str:
@@ -128,15 +128,27 @@ class NumberingCounter:
         self._counts: dict[int, dict[int, int]] = {}   # abstractId -> ilvl -> current value
         self._override_used: set[tuple[int, int]] = set()
 
-    def listnum(self, instr: str) -> str | None:
-        """What a LISTNUM field prints: the next number of the named list, which it also uses up.
-        None for another field, or a list this document does not name."""
+    def is_listnum(self, instr: str) -> bool:
         m = _LISTNUM.match(instr)
-        if m is None or m[1] not in self.n.list_names:
+        return m is not None and m[1] in self.n.list_names
+
+    def listnum(self, instr: str) -> str | None:
+        """What a LISTNUM field prints: the next number of the named list (\\l its level, \\s the
+        number to start from), which it also uses up. None for another field, or a list this
+        document does not name."""
+        if not self.is_listnum(instr):
             return None
+        m = _LISTNUM.match(instr)
+        switches = m[2] or ""
+        level, start = re.search(r"\\l\s*(\d+)", switches), re.search(r"\\s\s*(\d+)", switches)
         aid = self.n.list_names[m[1]]
         num_id = next((nid for nid, a in self.n.num_to_abs.items() if a == aid), None)
-        info = self.next(num_id, int(m[2] or 1) - 1) if num_id is not None else None
+        if num_id is None:
+            return None
+        ilvl = max(int(level[1]) - 1, 0) if level else 0
+        if start:
+            self._counts.setdefault(aid, {})[ilvl] = int(start[1]) - 1
+        info = self.next(num_id, ilvl)
         return info.marker if info is not None and not info.is_bullet else None
 
     def next(self, num_id: int, ilvl: int) -> NumInfo | None:

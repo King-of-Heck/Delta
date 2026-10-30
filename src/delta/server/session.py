@@ -97,7 +97,7 @@ def _finish(a, b):
     try:
         return documents(a, b)
     except Exception as e:
-        raise BadDocument(f"these PDFs could not be read ({type(e).__name__})") from e
+        raise BadDocument(f"these documents could not be compared ({type(e).__name__})") from e
 
 
 def change_marks(lay: Layout, passages=()) -> tuple[dict[int, dict], list[list]]:

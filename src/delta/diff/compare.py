@@ -16,11 +16,9 @@ _PLURAL = {"insertion": "insertions", "deletion": "deletions", "numbering": "num
 
 def compare(a: Document, b: Document, *, ignore_case: bool = False,
             count_numbering: bool = True) -> Comparison:
-    ua, ub = units(a), units(b)
-    if a.source_kind != b.source_kind:       # a PDF shows how text looks, not the formatting behind it
-        for u in ua + ub:
-            u.fmt_spans = []
-    cmp = compare_units(ua, ub, ignore_case=ignore_case, count_numbering=count_numbering)
+    cmp = compare_units(units(a), units(b), ignore_case=ignore_case, count_numbering=count_numbering,
+                        # a PDF shows how text looks, not the formatting behind it
+                        ignore_format=a.source_kind != b.source_kind)
     cmp.a_doc, cmp.b_doc = a, b
     from .comments import compare_comments
     cmp.comments = compare_comments(a, b, cmp)
@@ -35,11 +33,13 @@ def _mark_num(row: Row, ou: Unit, ru: Unit) -> None:
     if (ou.marker or "") != (ru.marker or ""):
         row.num_changed = True
         row.old_marker = ou.marker or ""
+        nums = ou.para.num, ru.para.num
+        row.num_typed = all(n is not None and n.num_id == 0 for n in nums)
 
 
-def _equal_row(ou: Unit, ru: Unit, i: int, j: int) -> Row:
+def _equal_row(ou: Unit, ru: Unit, i: int, j: int, ignore_format: bool) -> Row:
     row = Row("equal", i, j, whole_segs(ru.text, ru.bold_runs, "eq"))
-    ranges = fmt_diff(ou.fmt_spans, ru.fmt_spans)
+    ranges = None if ignore_format else fmt_diff(ou.fmt_spans, ru.fmt_spans)
     if ranges:
         row.fmt_changed = True
         row.fmt_ranges = ranges
@@ -48,8 +48,8 @@ def _equal_row(ou: Unit, ru: Unit, i: int, j: int) -> Row:
 
 
 def compare_units(orig: list[Unit], rev: list[Unit], *, ignore_case: bool = False,
-                  count_numbering: bool = True) -> Comparison:
-    o_t = [norm(u.text, ignore_case) for u in orig]
+                  count_numbering: bool = True, ignore_format: bool = False) -> Comparison:
+    o_t =[norm(u.text, ignore_case) for u in orig]
     r_t = [norm(u.text, ignore_case) for u in rev]
     o_tok = [content_tokens(t) for t in o_t]
     r_tok = [content_tokens(t) for t in r_t]
@@ -65,7 +65,7 @@ def compare_units(orig: list[Unit], rev: list[Unit], *, ignore_case: bool = Fals
 
     rows: list[Row] = []
     for a0, a1, b0, b1 in ((0, a_split, 0, b_split), (a_split, len(orig), b_split, len(rev))):
-        _append_rows(orig, rev, o_t, r_t, o_tok, r_tok, a0, a1, b0, b1, rows)
+        _append_rows(orig, rev, o_t, r_t, o_tok, r_tok, a0, a1, b0, b1, rows, ignore_format)
 
     summary = empty_summary()
     passages: list[Passage] = []
@@ -88,7 +88,7 @@ def compare_units(orig: list[Unit], rev: list[Unit], *, ignore_case: bool = Fals
 
 
 def _append_rows(orig: list[Unit], rev: list[Unit], o_t: list[str], r_t: list[str], o_tok, r_tok,
-                 a0: int, a1: int, b0: int, b1: int, rows: list[Row]) -> None:
+                 a0: int, a1: int, b0: int, b1: int, rows: list[Row], ignore_format: bool = False) -> None:
     """The rows of orig[a0:a1] vs rev[b0:b1], appended to `rows` with indices into the full
     (unsliced) orig/rev -- one independent LCS problem, so nothing outside the range can affect
     it, or be affected by it."""
@@ -108,7 +108,7 @@ def _append_rows(orig: list[Unit], rev: list[Unit], o_t: list[str], r_t: list[st
         tag, items = segs[s]
         if tag == "equal":
             for i, j in items:
-                rows.append(_equal_row(orig[i], rev[j], i, j))
+                rows.append(_equal_row(orig[i], rev[j], i, j, ignore_format))
             s += 1
             continue
         dels: list[int] = []

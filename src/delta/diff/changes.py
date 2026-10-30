@@ -55,6 +55,7 @@ class Row:
     old_marker: str | None = None
     cids: list[int] = field(default_factory=list)   # the row's passage numbers in reading order
     num_cid: int | None = None      # the numbering passage (a renumbered marker), when counted
+    num_typed: bool = False         # both numbers were read from text (mixed.TYPED): counted whatever the option
 
 
 def _shown(unit: Unit, a: int, b: int) -> str:
@@ -81,7 +82,7 @@ def row_passages(row: Row, row_index: int, first: int, count_numbering: bool) ->
     n = first - 1
     row.cids = []
     row.num_cid = None
-    if row.num_changed and count_numbering:
+    if row.num_changed and (count_numbering or row.num_typed):
         n += 1
         row.num_cid = n
         row.cids.append(n)

@@ -1,10 +1,14 @@
-from delta.mixed import level
+from delta.mixed import _joined, level
 from delta.model import Document, NoteRef, NumInfo, Paragraph, ParaProps, Run, RunProps
 from delta.reader import documents, read_source
 from delta.diff.compare import compare
 from delta.pdf.report import report_info, report_lines
 from delta.testing.makedocx import DOC, P, make_docx
 from delta.testing.makepdf import make_pdf
+
+
+def joined_runs(blocks):
+    return len(_joined(blocks))
 
 
 def _para(text, num=None, style=None, **props):
@@ -67,7 +71,7 @@ def test_a_one_letter_opening_word_in_word_stays_text():
 def test_a_line_that_is_words_page_header_is_not_body_text():
     w = _word(_para("Body line"), _para("Kept title"))
     w.parts = {"header1.xml": [_para("Form 1"), _para("Kept title")]}
-    _, b = level(w, _pdf(_para("FORM 1"), _para("Body line"), _para("Kept title")))
+    _, b = level(w, _pdf(_para("FORM 1"), _para("Body line"), _para("Form 1"), _para("Kept title")))
     assert [p.text for p in b.blocks] == ["Body line", "Kept title"]
 
 
@@ -79,7 +83,7 @@ def test_ordinary_opening_words_are_not_numbers():
 def test_a_footnote_mark_after_the_number_survives():
     ref = NoteRef("footnote", 1)
     p = Paragraph([Run("2.1 ", RunProps()), Run("", RunProps(note=ref)), Run("Intent", RunProps())], ParaProps())
-    _, b = level(_word(_para("x")), _pdf(p))
+    _, b = level(_word(_para("x", _num("2.1"))), _pdf(p))
     assert b.blocks[0].text == "Intent"
     assert any(r.props.note == ref for r in b.blocks[0].runs)
 
@@ -97,7 +101,8 @@ def test_a_word_contents_lines_page_number_is_the_pdfs_token():
 
 def test_bullet_forms_are_one_character():
     a, b = level(_word(_para("� PROJECT")), _pdf(_para(" PROJECT")))
-    assert a.blocks[0].text == b.blocks[0].text == "• PROJECT"
+    for p in (a.blocks[0], b.blocks[0]):
+        assert (p.num.marker, p.num.is_bullet, p.text) == ("•", True, "PROJECT")
 
 
 def test_headers_and_comments_are_left_out_and_the_source_is_untouched():
@@ -137,6 +142,62 @@ def test_the_report_says_what_a_mixed_compare_left_out():
     a, b = documents(read_source(w), read_source(p))
     assert ("Word compared with PDF: wording and numbering only. Formatting, headers, footers and comments "
             "were not compared.") in report_lines(report_info(compare(a, b), "a", "b", "full"))
+
+
+def _changes(a, b, **options):
+    return compare(*level(a, b), **options).summary["total"]
+
+
+def test_a_word_bullet_list_matches_its_pdf():
+    assert _changes(_word(_para("Item", NumInfo(1, 0, "•", True))), _pdf(_para("• Item"))) == 0
+    assert _changes(_word(_para("Item", NumInfo(1, 1, "◦", True))), _pdf(_para("▪ Item"))) == 0
+    hanging = Paragraph([Run("o Item", RunProps())], ParaProps(ind_hanging_pt=18.0))
+    assert _changes(_word(_para("Item", NumInfo(1, 1, "◦", True))), _pdf(hanging)) == 0
+
+
+def test_a_title_or_a_figure_is_not_a_number():
+    _, b = level(_word(_para("x")), _pdf(_para("Mr. Smith"), _para("Inc. shall"), _para("2.50 per unit")))
+    assert [p.num for p in b.blocks] == [None, None, None]
+
+
+def test_an_edit_to_typed_opening_text_shows_with_numbering_changes_off():
+    for old, new in (("Mr. Smith", "Ms. Smith"), ("2.50 per unit", "3.50 per unit"), ("(a) typed", "(b) typed")):
+        assert _changes(_word(_para(old)), _pdf(_para(new)), count_numbering=False) > 0
+    known = _para("x", _num("Section 1")), _para("Section 5 applies")
+    assert _changes(_word(*known), _pdf(_para("Section 1 x"), _para("Section 6 applies")), count_numbering=False) > 0
+
+
+def test_a_renumbered_word_list_item_still_follows_the_numbering_option():
+    assert _changes(_word(_para("x", _num("(a)"))), _pdf(_para("(b) x")), count_numbering=False) == 0
+    assert _changes(_word(_para("x", _num("(a)"))), _pdf(_para("(b) x"))) == 1
+
+
+def test_a_changed_contents_line_lists_its_printed_page_number():
+    a, b = level(_word(_para("Intent\t24", style="TOC1")), _pdf(_para("Other words\t9", style="TOC1")))
+    assert "24" in str(compare(a, b).to_dict())
+
+
+def test_a_real_line_equal_to_words_header_stays_unless_it_repeats():
+    w = _word(_para("Body"))
+    w.parts = {"header1.xml": [_para("Confidential")]}
+    _, once = level(w, _pdf(_para("Body"), _para("Confidential")))
+    assert [p.text for p in once.blocks] == ["Body", "Confidential"]
+    _, twice = level(w, _pdf(_para("Confidential"), _para("Body"), _para("Confidential")))
+    assert [p.text for p in twice.blocks] == ["Body"]
+
+
+def test_only_an_opening_bullet_is_changed():
+    a, _ = level(_word(_para("5·10")), _pdf(_para("x")))
+    assert a.blocks[0].text == "5·10"
+
+
+def test_joining_a_cell_keeps_images_and_note_marks():
+    ref = NoteRef("footnote", 1)
+    image = Paragraph([Run("", RunProps(image_w_pt=9.0, image_h_pt=9.0))], ParaProps())
+    mark = Paragraph([Run("", RunProps(note=ref))], ParaProps())
+    assert joined_runs([image, _para("text")]) == 2
+    blocks = _joined([mark, _para("text")])
+    assert any(r.props.note == ref for p in blocks for r in p.runs)
 
 
 def test_a_word_footnotes_line_breaks_are_separate_paragraphs():

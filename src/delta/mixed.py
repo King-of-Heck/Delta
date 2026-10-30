@@ -7,15 +7,19 @@ from __future__ import annotations
 
 import copy
 import re
+from collections import Counter
 from dataclasses import dataclass, replace
 
 from .model import Document, NumInfo, Paragraph, Run, Table, collapse_ws, iter_paragraphs
 
 _SPACE = " \t "
-_SHAPE = re.compile(r"(\(?(?:\d+(?:\.\d+)*|[A-Za-z]{1,4}|[ivxlcIVXLC]{1,7})[).]|\d+(?:\.\d+)+)(?=[\s ]|$)")
+# A number the shape alone says is one: "(a)", "a)", "(12)", "5.", "1.2.", "A.". Not "Mr." or "2.50".
+_SHAPE = re.compile(r"(\(?(?:\d{1,3}(?:\.\d{1,3})*|[A-Za-z]{1,4})\)|\d{1,3}(?:\.\d{1,3})*\.|[A-Za-z]\.)(?=[\s ]|$)")
+_DECIMAL = re.compile(r"(\d{1,3}(?:\.\d{1,3})+)(?=[\s ]|$)")         # "2.15": a number only on a hanging line
 _WORDED = re.compile(r"([A-Za-z]+) (\d+(?:\.\d+)*)(?=[\s ]|$)")
-_BULLETS = str.maketrans({"�": "•", "": "•", "": "•", "": "•",
-                          "·": "•"})
+_BULLET = "•"
+_BULLETS = str.maketrans({c: _BULLET for c in "�·◦▪‣"})
+TYPED = 0                    # NumInfo.num_id of a number read from the text; a Word list's id is never 0
 _TOC_NUMBER = re.compile(r"\t([^\t ]{1,8})\s*$")
 _LINE = re.compile(r"[\n\v]")
 
@@ -36,7 +40,7 @@ def level(a: Document, b: Document) -> tuple[Document, Document]:
     for doc in (word, pdf):
         for p in _all_paragraphs(doc):
             _bullets(p)
-            _lift(p, numbers, doc is pdf and p.props.ind_hanging_pt > 0)
+            _lift(p, numbers, p.props.ind_hanging_pt > 0, doc is pdf)
         _join_cells(doc.blocks)
     return (word, pdf) if b.source_kind == "pdf" else (pdf, word)
 
@@ -87,6 +91,8 @@ def _drop_page_titles(pdf: Document, source: Document, word: Document) -> None:
             titles |= {_key(t) for t in [whole, *_LINE.split(whole)]}
     titles.discard("")
     titles -= {_key(p.text) for p in _all_paragraphs(word)}
+    seen = Counter(_key(b.text) for b in pdf.blocks if isinstance(b, Paragraph))
+    titles = {t for t in titles if seen[t] > 1}          # once could be a real added line: keep it
     if titles:
         pdf.blocks = [b for b in pdf.blocks if not (isinstance(b, Paragraph) and _key(b.text) in titles)]
 
@@ -111,15 +117,25 @@ def _joined(blocks: list) -> list:
     for b in blocks:
         last = out[-1] if out else None
         if isinstance(b, Paragraph) and isinstance(last, Paragraph) and b.num is None and last.num is None:
-            if b.is_empty and not any(r.props.note for r in b.runs):
+            if _blank(b):
                 continue
-            if last.is_empty:
+            if _blank(last):
                 out[-1] = b
                 continue
-            last.runs = [*last.runs, Run(" ", last.runs[-1].props), *b.runs]
-            continue
+            if not _has_image(b) and not _has_image(last):
+                space = replace(last.runs[-1].props, note=None, field=None, field_text=None)
+                last.runs = [*last.runs, Run(" ", space), *b.runs]
+                continue
         out.append(b)
     return out
+
+
+def _has_image(p: Paragraph) -> bool:
+    return any(r.props.image_w_pt for r in p.runs)
+
+
+def _blank(p: Paragraph) -> bool:
+    return p.is_empty and not _has_image(p) and not any(r.props.note for r in p.runs)
 
 
 def _contents_number(p: Paragraph) -> None:
@@ -142,10 +158,20 @@ def _known_numbers(word: Document) -> _Numbers:
 
 
 def _bullets(p: Paragraph) -> None:
-    p.runs = [replace(r, text=r.text.translate(_BULLETS)) if r.props.field is None else r for r in p.runs]
+    """A list bullet in one form, on both sides: Word's by level and a PDF's by font all differ."""
+    if p.num is not None:
+        if p.num.is_bullet:
+            p.num = replace(p.num, marker=_BULLET)
+        return
+    for i, r in enumerate(p.runs):
+        body = r.text.lstrip(_SPACE)
+        if body:
+            at = len(r.text) - len(body)
+            p.runs[i] = replace(r, text=r.text[:at] + body[0].translate(_BULLETS) + body[1:])
+            return
 
 
-def _leading_number(text: str, numbers: _Numbers, letters: bool) -> tuple[str, int] | None:
+def _leading_number(text: str, numbers: _Numbers, hanging: bool, letters: bool) -> tuple[str, int] | None:
     """(the number as it will be held, its length in `text`), or None."""
     for known in numbers.exact:
         if text.startswith(known) and (len(text) == len(known) or text[len(known)] in _SPACE):
@@ -155,16 +181,21 @@ def _leading_number(text: str, numbers: _Numbers, letters: bool) -> tuple[str, i
         return f"{numbers.words[m[1].upper()]} {m[2]}", m.end()
     if letters and text[:1] in numbers.letters and text[1:2] in _SPACE and len(text) > 1:
         return text[0], 1
-    m = _SHAPE.match(text)
+    m = _SHAPE.match(text) or (_DECIMAL.match(text) if hanging else None)
     return (m[1], m.end()) if m else None
 
 
-def _lift(p: Paragraph, numbers: _Numbers, letters: bool) -> None:
+def _lift(p: Paragraph, numbers: _Numbers, hanging: bool, from_pdf: bool) -> None:
     if p.num is not None or not p.runs:
         return
     text = "".join(r.text for r in p.runs)
     body = text.lstrip(_SPACE)
-    found = _leading_number(body, numbers, letters)
+    is_bullet = body[:1] == _BULLET or (from_pdf and hanging and body[:1] == "o")     # "o": Word's second-level bullet
+    if is_bullet and body[1:2] in ("", " ", "\t", " "):
+        found = _BULLET, 1
+    else:
+        is_bullet = False
+        found = _leading_number(body, numbers, hanging, from_pdf and hanging)
     if found is None:
         return
     number, length = found
@@ -178,4 +209,4 @@ def _lift(p: Paragraph, numbers: _Numbers, letters: bool) -> None:
             continue
         runs.append(replace(r, text=r.text[take:]) if take else r)
     p.runs = runs
-    p.num = NumInfo(0, 0, number, False)
+    p.num = NumInfo(TYPED, 0, number, is_bullet)

@@ -115,9 +115,9 @@ approximate and comes with limits worth knowing before relying on it:
 - Comparing a `.docx` with a PDF can report changes that are not real, mostly on form and signature
   pages: a Word table without visible borders holds its text cell by cell, while a PDF holds lines
   across the page, so the same words read in a different order. On the one long contract this has
-  been measured against, the Word file against an unedited PDF of itself showed 94 such changes, all
-  in schedules and forms and none in the main clauses, so check those pages by eye. Only PDFs saved
-  from Word have been tried.
+  been measured against, the Word file against an unedited PDF of itself showed 96 such changes, all
+  in schedules and forms and none in the main clauses, so check those pages by eye. Every real edit
+  in that contract still appeared. Only PDFs saved from Word have been tried.
 - Running headers, footers and page numbers are detected and left out of the comparison, so an
   edit made only inside a header or footer is not reported. A one-page document has nothing for
   its header to repeat against, so its header text is compared as body text instead, and on a

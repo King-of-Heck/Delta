@@ -209,7 +209,8 @@ def _runs(el, ctx: _Ctx, para_rpr: dict, out: list[Run], state: dict):
                     if fld is not None and fld["phase"] == "instr":
                         fld["instr"] += x.text or ""
                 elif xt == _W_t or xt == _W_delText:
-                    if fld is not None and fld["phase"] == "result" and field_name(fld["instr"]) is not None:
+                    if fld is not None and fld["phase"] == "result" and (
+                            field_name(fld["instr"]) is not None or ctx.counter.is_listnum(fld["instr"])):
                         if fld["props"] is None:
                             fld["props"] = props
                         # the cached result of a live field: replaced by the token, kept as field_text
@@ -281,6 +282,11 @@ def _runs(el, ctx: _Ctx, para_rpr: dict, out: list[Run], state: dict):
             out.append(Run(token,
                            RunProps(**{**props.__dict__, "field": fs_name, "field_text": cached})))
             ctx.raw_len += len(token)
+            state["text_seen"] = True
+        elif tag == _W_fldSimple and (number := ctx.counter.listnum(child.get(_W_instr) or "")) is not None:
+            first = child.find(_W_r)
+            out.append(Run(number, _run_props(first.find(_W_rPr) if first is not None else None, para_rpr, ctx)))
+            ctx.raw_len += len(number)
             state["text_seen"] = True
         elif tag in (_W_commentRangeStart, _W_commentRangeEnd):
             cid = child.get(_W_id)
