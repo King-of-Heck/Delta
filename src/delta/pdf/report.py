@@ -30,7 +30,8 @@ class ReportInfo:
     changed_only: tuple[int, int] | None = None   # (pages emitted, pages in the layout) for a changed-pages-only PDF
     comments: tuple | None = None   # (added, removed, edited) counts, None when no comment changed
     tracked: tuple[int, int] | None = None    # (original, modified) tracked changes read as accepted; None when both are zero
-    source: tuple | None = None     # (original, modified) skipped page numbers when the sources are PDFs; None for Word
+    source: tuple | None = None     # (original, modified) skipped page numbers when a source is a PDF; None for Word
+    mixed: bool = False             # a Word document against a PDF: wording and numbering only
 
 
 def report_info(cmp: Comparison, original: str, modified: str, render_set: str,
@@ -45,10 +46,12 @@ def report_info(cmp: Comparison, original: str, modified: str, render_set: str,
     tracked = counts if any(counts) else None
     docs = (cmp.a_doc, cmp.b_doc)
     source = None
-    if all(d is not None and d.source_kind == "pdf" for d in docs):
+    mixed = all(d is not None for d in docs) and docs[0].source_kind != docs[1].source_kind
+    if mixed or all(d is not None and d.source_kind == "pdf" for d in docs):
         source = tuple(tuple(d.skipped_pages) for d in docs)
     return ReportInfo(original, modified, when or datetime.now(), render_set, dict(cmp.summary),
-                      cmp.ignore_case, cmp.count_numbering, comments=comments, tracked=tracked, source=source)
+                      cmp.ignore_case, cmp.count_numbering, comments=comments, tracked=tracked, source=source,
+                      mixed=mixed)
 
 
 def _onoff(b: bool) -> str:
@@ -84,7 +87,9 @@ def report_lines(info: ReportInfo) -> list[str]:
         a, b = info.tracked
         lines.insert(5, f"Tracked changes in sources: original {a}, modified {b} (compared as accepted)")
     if info.source is not None:
-        extra = ["Sources: PDFs, text and tables re-read from the pages (layout approximate, images not shown)"]
+        extra = [("Word compared with PDF: wording and numbering only. Formatting, headers, footers and comments "
+                  "were not compared.") if info.mixed
+                 else "Sources: PDFs, text and tables re-read from the pages (layout approximate, images not shown)"]
         if any(info.source):
             a, b = info.source
             extra.append(f"Pages with no text, not compared: original {_page_list(a)}, modified {_page_list(b)}")

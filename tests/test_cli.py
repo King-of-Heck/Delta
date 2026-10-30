@@ -353,10 +353,10 @@ def test_compare_and_dump_take_pdfs(tmp_path, capsys):
     assert "Alpha beta" in capsys.readouterr().out
 
 
-def test_mixed_kinds_are_refused_on_the_command_line(tmp_path):
+def test_mixed_kinds_compare_on_the_command_line(tmp_path, capsys):
     from delta.testing.makepdf import make_pdf
     a, b = tmp_path / "a.docx", tmp_path / "b.pdf"
     a.write_bytes(make_docx({"word/document.xml": DOC(P("x"))}))
     b.write_bytes(make_pdf([[("text", 72, 100, 12, "x")]]))
-    with pytest.raises(SystemExit, match="isn't supported yet"):
-        main(["compare", str(a), str(b)])
+    assert main(["compare", str(a), str(b)]) == 0
+    assert '"total": 0' in capsys.readouterr().out

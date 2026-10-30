@@ -16,7 +16,11 @@ _PLURAL = {"insertion": "insertions", "deletion": "deletions", "numbering": "num
 
 def compare(a: Document, b: Document, *, ignore_case: bool = False,
             count_numbering: bool = True) -> Comparison:
-    cmp = compare_units(units(a), units(b), ignore_case=ignore_case, count_numbering=count_numbering)
+    ua, ub = units(a), units(b)
+    if a.source_kind != b.source_kind:       # a PDF shows how text looks, not the formatting behind it
+        for u in ua + ub:
+            u.fmt_spans = []
+    cmp = compare_units(ua, ub, ignore_case=ignore_case, count_numbering=count_numbering)
     cmp.a_doc, cmp.b_doc = a, b
     from .comments import compare_comments
     cmp.comments = compare_comments(a, b, cmp)

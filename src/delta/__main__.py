@@ -1,6 +1,6 @@
 """Command line entry:
     python -m delta dump <file.docx>
-    Every <file.docx> may also be a text PDF (both files of a pair must be the same kind).
+    Every <file.docx> may also be a text PDF; a Word document and a PDF compare on wording and numbering only.
     python -m delta compare <a.docx> <b.docx> [--ignore-case] [--no-count-numbering]
     python -m delta layout <a.docx> <b.docx> [--ignore-case] [--no-count-numbering]
                                [--hide-unchanged] [--hide-insertions] [--hide-deletions]
@@ -35,7 +35,7 @@ from .server.app import DEFAULT_GRACE, DEFAULT_IDLE, serve
 from .server.shortcut import data_folder, desktop_folder, desktop_shortcut, write_shortcut
 
 USAGE = ("usage: python -m delta dump <file.docx>\n"
-         "       Every <file.docx> may also be a text PDF (both files of a pair must be the same kind).\n"
+         "       Every <file.docx> may also be a text PDF; a Word document and a PDF compare on wording and numbering only.\n"
          "       python -m delta compare <a.docx> <b.docx> [--ignore-case] [--no-count-numbering]\n"
          "       python -m delta layout <a.docx> <b.docx> [--ignore-case] [--no-count-numbering]\n"
          "                                  [--hide-unchanged] [--hide-insertions] [--hide-deletions]\n"
@@ -118,10 +118,7 @@ def _read_two(pa: str, pb: str):
 
 
 def _compare(flags, pa, pb):
-    a, b = _read_two(pa, pb)
-    if a.source_kind != b.source_kind:
-        raise SystemExit("Comparing a Word document with a PDF isn't supported yet.")
-    a, b = documents(a, b)
+    a, b = documents(*_read_two(pa, pb))
     return compare(a, b, ignore_case="--ignore-case" in flags,
                    count_numbering="--no-count-numbering" not in flags)
 

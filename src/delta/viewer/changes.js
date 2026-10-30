@@ -140,8 +140,10 @@ const NO_TEXT_MANY = "have no text (scanned?) and were not compared.";
 function sourceNote() {
   const el = $("sourceNote");
   const s = data && data.source;
-  if (!s || s.kind !== "pdf") { el.hidden = true; el.textContent = ""; return; }
-  const parts = ["Compared from PDFs: text and tables are re-read from the pages, so layout is approximate and images are not shown."];
+  if (!s || s.kind === "docx") { el.hidden = true; el.textContent = ""; return; }
+  const parts = [s.kind === "mixed"
+    ? "Word compared with PDF: wording and numbering only. Formatting, headers, footers and comments were not compared."
+    : "Compared from PDFs: text and tables are re-read from the pages, so layout is approximate and images are not shown."];
   for (const [side, label] of [["original", "Original"], ["modified", "Modified"]]) {
     const p = s.skipped[side];
     if (p.length === 1) parts.push(`${label}: page ${p[0]} ${NO_TEXT_ONE}`);

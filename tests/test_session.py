@@ -439,21 +439,19 @@ def test_a_word_pair_reports_its_kind_too():
     assert Session(fonts=FR).source() is None
 
 
-def test_a_word_document_against_a_pdf_is_refused_and_changes_nothing():
+def test_a_word_document_against_a_pdf_compares():
     s = _session()
-    with pytest.raises(BadDocument) as e:
-        s.load("a.docx", _docx(P("x")), "b.pdf", _pdf("x"))
-    assert str(e.value) == "Comparing a Word document with a PDF isn't supported yet."
-    assert s.a_name == "a.docx" and s.b_name == "b.docx"
+    s.load("a.docx", _docx(P("x")), "b.pdf", _pdf("x"))
+    assert s.a_name == "a.docx" and s.b_name == "b.pdf"
+    assert s.source()["kind"] == "mixed"
 
 
-def test_a_word_document_against_a_pdf_is_refused_before_either_is_parsed(monkeypatch):
-    calls = []
-    monkeypatch.setattr(session_module, "read_source", lambda *a, **k: calls.append(1))
-    s = Session(fonts=FR)
-    with pytest.raises(BadDocument, match="Comparing a Word document with a PDF"):
-        s.load("a.docx", _docx(P("x")), "b.pdf", _pdf("x"))
-    assert calls == []
+def test_a_mixed_compare_leaves_the_cached_word_reading_alone():
+    s = _session()
+    word = _docx(P("(a) x"))
+    s.load("a.docx", word, "b.pdf", _pdf("(a) x"))
+    s.load("a.docx", word, "c.docx", word)
+    assert s.a_doc.blocks[0].num is None
 
 
 def test_a_refused_pdf_names_the_file_and_gives_the_reason():

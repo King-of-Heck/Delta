@@ -106,8 +106,9 @@ page count and that its text reads back.
 ## Comparing PDFs
 
 A pair of text PDFs — the ones a "Save As PDF" from Word produces — can be dropped and compared
-the same way a pair of `.docx` files is; the two files of a pair must be the same kind, so a
-`.docx` cannot yet be compared with a PDF. Reading a PDF re-extracts its text, tables and
+the same way a pair of `.docx` files is. A `.docx` can also be compared with a PDF, in either
+order, on wording and numbering only: formatting, headers, footers and comments are not compared,
+and the app says so. Reading a PDF re-extracts its text, tables and
 footnotes from the printed pages rather than from any document structure, so the result is
 approximate and comes with limits worth knowing before relying on it:
 

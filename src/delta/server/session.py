@@ -31,7 +31,6 @@ from ..worker import Unavailable
 
 OPTION_KEYS = ("ignore_case", "count_numbering", "show_equal", "show_insertions", "show_deletions",
                "show_formatting")
-MIXED = "Comparing a Word document with a PDF isn't supported yet."
 PARSE_CACHE = 4              # sources read, kept by content hash: Swap and a re-compare skip the read
 
 
@@ -246,7 +245,8 @@ class Session:
         """Which reader produced the sources, and the PDF pages left out for having no text."""
         if not self.loaded:
             return None
-        return {"kind": self.a_doc.source_kind,
+        kinds = {self.a_doc.source_kind, self.b_doc.source_kind}
+        return {"kind": "mixed" if len(kinds) == 2 else kinds.pop(),
                 "skipped": {"original": list(self.a_doc.skipped_pages), "modified": list(self.b_doc.skipped_pages)}}
 
     def state(self) -> dict:
@@ -314,21 +314,12 @@ class Session:
     def load(self, a_name: str, a_bytes: bytes, b_name: str, b_bytes: bytes,
              options: Options | None = None) -> None:
         """Nothing is committed until the new pair has compared AND laid out, so a bad file or a
-        failure part way leaves the session showing exactly what it was showing before. A Word
-        document against a PDF is refused from the bytes alone, before either is parsed; an
-        unknown kind still gets its own per-file message from the parse below, and the
-        source_kind check after parsing stays as the invariant (kind_of and a reader's own idea
-        of what it read should never disagree, but the check costs nothing to keep)."""
-        a_kind, b_kind = kind_of(a_bytes), kind_of(b_bytes)
-        if a_kind is not None and b_kind is not None and a_kind != b_kind:
-            raise BadDocument(MIXED)
+        failure part way leaves the session showing exactly what it was showing before."""
         t0 = perf_counter()
         try:
             a, b = self._read_pair(a_name, a_bytes, b_name, b_bytes)
         finally:
             self.progress = None
-        if a.source_kind != b.source_kind:
-            raise BadDocument(MIXED)
         a, b = _finish(a, b)
         self._timed("parse", t0)
         self._commit(a_name, b_name, a, b, options or self.options)

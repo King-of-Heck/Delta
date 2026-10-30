@@ -7,26 +7,37 @@ from __future__ import annotations
 
 import copy
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
-from .model import Document, NumInfo, Paragraph, Run, Table, iter_paragraphs
+from .model import Document, NumInfo, Paragraph, Run, Table, collapse_ws, iter_paragraphs
 
 _SPACE = " \t "
 _SHAPE = re.compile(r"(\(?(?:\d+(?:\.\d+)*|[A-Za-z]{1,4}|[ivxlcIVXLC]{1,7})[).]|\d+(?:\.\d+)+)(?=[\s ]|$)")
 _WORDED = re.compile(r"([A-Za-z]+) (\d+(?:\.\d+)*)(?=[\s ]|$)")
-_BULLETS = str.maketrans({"�": "•", "": "•", "": "•", "·": "•"})
+_BULLETS = str.maketrans({"�": "•", "": "•", "": "•", "": "•",
+                          "·": "•"})
 _TOC_NUMBER = re.compile(r"\t([^\t ]{1,8})\s*$")
-_BREAK = re.compile(r"[\n\v]")
+_LINE = re.compile(r"[\n\v]")
+
+
+@dataclass
+class _Numbers:
+    """What Word's own numbering says a leading number can look like."""
+    exact: list[str]             # longest first
+    letters: set[str]            # one character: taken only on a hanging line, else "A contractor" is a number
+    words: dict[str, str]        # "SECTION" -> "Section"
 
 
 def level(a: Document, b: Document) -> tuple[Document, Document]:
-    word, pdf = (a, b) if b.source_kind == "pdf" else (b, a)
-    word = _word_as_printed(word)
-    markers, words = _known_markers(word)
+    source, pdf = (a, b) if b.source_kind == "pdf" else (b, a)
+    word = _word_as_printed(source)
+    _drop_page_titles(pdf, source, word)
+    numbers = _known_numbers(word)
     for doc in (word, pdf):
         for p in _all_paragraphs(doc):
             _bullets(p)
-            _lift(p, markers, words)
+            _lift(p, numbers)
+        _join_cells(doc.blocks)
     return (word, pdf) if b.source_kind == "pdf" else (pdf, word)
 
 
@@ -40,7 +51,6 @@ def _all_paragraphs(doc: Document):
 def _word_as_printed(source: Document) -> Document:
     word = copy.deepcopy(source)
     word.parts, word.comments, word.comment_anchors = {}, {}, {}
-    _split_cells(word.blocks)
     for p in _all_paragraphs(word):
         _contents_number(p)
         p.runs = [replace(r, text=r.text.upper()) if (r.props.caps or r.props.small_caps) and r.props.field is None
@@ -48,29 +58,49 @@ def _word_as_printed(source: Document) -> Document:
     return word
 
 
-def _split_cells(blocks: list) -> None:
+def _drop_page_titles(pdf: Document, source: Document, word: Document) -> None:
+    """A line the PDF prints that is Word's page header or footer text and nowhere in Word's body:
+    a title the reader could not tell from the page's first paragraph."""
+    titles = set()
+    for blocks in source.parts.values():
+        for p in iter_paragraphs(blocks):
+            whole = "".join(r.text for r in p.runs)
+            titles |= {_key(t) for t in [whole, *_LINE.split(whole)]}
+    titles.discard("")
+    titles -= {_key(p.text) for p in _all_paragraphs(word)}
+    if titles:
+        pdf.blocks = [b for b in pdf.blocks if not (isinstance(b, Paragraph) and _key(b.text) in titles)]
+
+
+def _key(text: str) -> str:
+    return collapse_ws(text).upper()
+
+
+def _join_cells(blocks: list) -> None:
+    """A table cell's plain lines as one paragraph: Word's separate paragraphs and line breaks are
+    not the lines a PDF's cell is read into."""
     for b in blocks:
         if isinstance(b, Table):
             for row in b.rows:
                 for cell in row.cells:
-                    _split_cells(cell.blocks)
-                    cell.blocks = [q for x in cell.blocks for q in _split_breaks(x)]
+                    _join_cells(cell.blocks)
+                    cell.blocks = _joined(cell.blocks)
 
 
-def _split_breaks(block) -> list:
-    if not isinstance(block, Paragraph) or not any(_BREAK.search(r.text) for r in block.runs):
-        return [block]
-    out, runs = [], []
-    for r in block.runs:
-        parts = _BREAK.split(r.text)
-        for i, part in enumerate(parts):
-            if i:
-                out.append(runs)
-                runs = []
-            if part or r.props.note is not None:
-                runs.append(replace(r, text=part))
-    out.append(runs)
-    return [Paragraph(rs, block.props, block.num if i == 0 else None) for i, rs in enumerate(out)]
+def _joined(blocks: list) -> list:
+    out: list = []
+    for b in blocks:
+        last = out[-1] if out else None
+        if isinstance(b, Paragraph) and isinstance(last, Paragraph) and b.num is None and last.num is None:
+            if b.is_empty and not any(r.props.note for r in b.runs):
+                continue
+            if last.is_empty:
+                out[-1] = b
+                continue
+            last.runs = [*last.runs, Run(" ", last.runs[-1].props), *b.runs]
+            continue
+        out.append(b)
+    return out
 
 
 def _contents_number(p: Paragraph) -> None:
@@ -84,38 +114,38 @@ def _contents_number(p: Paragraph) -> None:
                   Run("{PAGEREF}", replace(p.runs[-1].props, field="PAGEREF", field_text=m[1]))]
 
 
-def _known_markers(word: Document) -> tuple[dict[str, str], set[str]]:
-    """Word's own numbers, by capitals, longest first; and the first words of its worded numbers."""
-    found = {p.num.marker.strip() for p in _all_paragraphs(word)
-             if p.num and not p.num.is_bullet and len(p.num.marker.strip()) > 1}
-    ordered = sorted(found, key=len, reverse=True)
-    words = {m.split()[0].upper() for m in found if _WORDED.fullmatch(m)}
-    return {m.upper(): m for m in ordered}, words
+def _known_numbers(word: Document) -> _Numbers:
+    found = {p.num.marker.strip() for p in _all_paragraphs(word) if p.num and not p.num.is_bullet}
+    found.discard("")
+    return _Numbers(sorted((m for m in found if len(m) > 1), key=len, reverse=True),
+                    {m for m in found if len(m) == 1},
+                    {m.split()[0].upper(): m.split()[0] for m in found if _WORDED.fullmatch(m)})
 
 
 def _bullets(p: Paragraph) -> None:
     p.runs = [replace(r, text=r.text.translate(_BULLETS)) if r.props.field is None else r for r in p.runs]
 
 
-def _leading_number(text: str, markers: dict[str, str], words: set[str]) -> tuple[str, int] | None:
+def _leading_number(text: str, numbers: _Numbers, hanging: bool) -> tuple[str, int] | None:
     """(the number as it will be held, its length in `text`), or None."""
-    upper = text.upper()
-    for key, spelled in markers.items():
-        if upper.startswith(key) and (len(text) == len(key) or text[len(key)] in _SPACE):
-            return spelled, len(key)
+    for known in numbers.exact:
+        if text.startswith(known) and (len(text) == len(known) or text[len(known)] in _SPACE):
+            return known, len(known)
     m = _WORDED.match(text)
-    if m and m[1].upper() in words:
-        return m[0], m.end()
+    if m and m[1].upper() in numbers.words:
+        return f"{numbers.words[m[1].upper()]} {m[2]}", m.end()
+    if hanging and text[:1] in numbers.letters and text[1:2] in _SPACE and len(text) > 1:
+        return text[0], 1
     m = _SHAPE.match(text)
     return (m[1], m.end()) if m else None
 
 
-def _lift(p: Paragraph, markers: dict[str, str], words: set[str]) -> None:
+def _lift(p: Paragraph, numbers: _Numbers) -> None:
     if p.num is not None or not p.runs:
         return
     text = "".join(r.text for r in p.runs)
     body = text.lstrip(_SPACE)
-    found = _leading_number(body, markers, words)
+    found = _leading_number(body, numbers, p.props.ind_hanging_pt > 0)
     if found is None:
         return
     number, length = found

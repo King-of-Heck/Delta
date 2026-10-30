@@ -35,13 +35,18 @@ def read_source(data: bytes, progress=None):
 
 
 def documents(*sources) -> list[Document]:
-    """The Documents of `read_source` results: the PDFs among them finished together."""
+    """The Documents of `read_source` results: the PDFs among them finished together, and a Word
+    document and a PDF then put in one form (`mixed.level`)."""
     pdfs = [s for s in sources if not isinstance(s, Document)]
     if not pdfs:
         return list(sources)
     from .pdfread import finish
     done = iter(finish(*pdfs))
-    return [s if isinstance(s, Document) else next(done) for s in sources]
+    docs = [s if isinstance(s, Document) else next(done) for s in sources]
+    if len(docs) == 2 and docs[0].source_kind != docs[1].source_kind:
+        from .mixed import level
+        return list(level(*docs))
+    return docs
 
 
 def read_document(data: bytes, progress=None) -> Document:

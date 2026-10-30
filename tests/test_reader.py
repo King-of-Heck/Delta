@@ -46,4 +46,5 @@ def test_a_pdf_is_read_on_its_own_and_finished_with_the_other_side():
     pdf, word = read_source(PDF), read_source(DOCX)
     assert (pdf.source_kind, word.source_kind) == ("pdf", "docx")
     a, b = documents(pdf, word)
-    assert "Hello from a PDF" in a.blocks[0].text and b is word
+    assert "Hello from a PDF" in a.blocks[0].text and "Hello from Word" in b.blocks[0].text
+    assert b is not word          # a Word document against a PDF is a copy: the app caches what it read
