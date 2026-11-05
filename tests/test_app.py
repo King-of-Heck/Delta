@@ -78,7 +78,7 @@ def _compare_body(a=P("aaaa"), b=P("aaaa bbbb"), options=None):
 
 def test_defaults():
     assert DEFAULT_IDLE == 8.0 and DEFAULT_GRACE == 120.0 and MAX_BODY == 64 * 1024 * 1024
-    assert set(STATIC) == {"index.html", "style.css", "app.js", "changes.js", "sources.js", "strip.js", "copy.js", "panes.js", "sync.js", "sides.js", "rowtext.js"}
+    assert set(STATIC) == {"index.html", "style.css", "app.js", "changes.js", "sources.js", "strip.js", "copy.js", "panes.js", "sync.js", "sides.js", "rowtext.js", "textredline.js", "textcompare.js"}
 
 
 def test_url_is_loopback_with_the_bound_port(srv):

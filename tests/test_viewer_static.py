@@ -72,7 +72,7 @@ def test_the_ping_carries_the_page_visibility():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
-@pytest.mark.parametrize("script", ["app.js", "changes.js", "sources.js", "strip.js", "copy.js", "panes.js", "sync.js", "sides.js", "rowtext.js"])
+@pytest.mark.parametrize("script", ["app.js", "changes.js", "sources.js", "strip.js", "copy.js", "panes.js", "sync.js", "sides.js", "rowtext.js", "textredline.js"])
 def test_scripts_parse(script):
     path = VIEWER.joinpath(script)
     r = subprocess.run([shutil.which("node"), "--check", str(path)], capture_output=True, text=True)
@@ -745,3 +745,39 @@ def test_pdf_sources_markup_and_copy():
     assert "have no text (scanned?) and were not compared" in changes
     app = _read("app.js")
     assert "/api/progress" in _function_body(app, "compareNow") and "clearInterval" in _function_body(app, "compareNow")
+
+
+TEXT_ROWS = ('[{"type":"changed","segments":[{"m":"eq","t":"Fee <b> & "},{"m":"del","t":"10"},{"m":"ins","t":"30"}]},'
+             '{"type":"inserted","segments":[{"m":"ins","t":"New."}]}]')
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
+def test_text_redline_html_and_markers():
+    out = _node("textredline.js", f"const r = {TEXT_ROWS}; console.log(JSON.stringify([m.redlineHtml(r), m.redlineText(r)]));")
+    html, text = json.loads(out)
+    assert html == ('<p>Fee &lt;b&gt; &amp; <s style="color:#ff0000">10</s><u style="color:#0000ff">30</u></p>'
+                    '<p><u style="color:#0000ff">New.</u></p>')
+    assert text == "Fee <b> & [-10-]{+30+}\n{+New.+}"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
+def test_text_count_line():
+    code = ("console.log(JSON.stringify([m.countLine({total:0,insertions:0,deletions:0}),"
+            "m.countLine({total:1,insertions:1,deletions:0}), m.countLine({total:3,insertions:2,deletions:1})]));")
+    assert json.loads(_node("textredline.js", code)) == ["No differences", "1 change: 1 insertion",
+                                                          "3 changes: 2 insertions, 1 deletion"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
+def test_text_delay_and_size():
+    code = ("console.log(JSON.stringify([m.delayFor(10), m.delayFor(45000), m.delayFor(10**7),"
+            "m.tooLong('x'.repeat(m.TEXT_MAX_BYTES)), m.tooLong('x'.repeat(m.TEXT_MAX_BYTES + 1)),"
+            "m.tooLong('\u00e9'.repeat(m.TEXT_MAX_BYTES / 2 + 1))]));")
+    assert json.loads(_node("textredline.js", code)) == [300, 500, 1000, False, True, True]
+
+
+def test_text_cap_is_the_same_in_the_viewer_and_the_server():
+    from delta.textread import TEXT_MAX_BYTES
+    m = re.search(r"export const TEXT_MAX_BYTES = (\d+) \* (\d+);", _read("textredline.js"))
+    assert int(m.group(1)) * int(m.group(2)) == TEXT_MAX_BYTES
+    assert "textredline.js" in STATIC and "textcompare.js" in STATIC
