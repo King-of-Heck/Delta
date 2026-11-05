@@ -1,7 +1,7 @@
 // Delta viewer: loads two .docx files, shows the server's page drawings, restyles them by
 // rendering set, zooms, downloads the PDF, and keeps the server alive while this window is open
 // (it stops a few seconds after the pings stop; each ping says whether the page is hidden, since
-// a hidden window's timers are throttled to one wake a minute and the server allows for that).
+// a hidden window's timers are throttled or frozen and the server then waits for as long as it takes).
 // The change list lives
 // in changes.js and listens for the events dispatched here.
 import { initChanges } from "./changes.js";
@@ -502,9 +502,10 @@ function wire() {
   $("pdf").addEventListener("click", savePdf);
   $("quit").addEventListener("click", quit);
   document.addEventListener("visibilitychange", ping);   // tell the server at once, either way
-  // The window closing fires visibilitychange (hidden=1, which would buy the server 90 s of
-  // patience) and then pagehide; a beacon still gets out of an unloading page and takes it back.
-  window.addEventListener("pagehide", () => { if (!state.closed) navigator.sendBeacon("/api/ping?hidden=0"); });
+  // The window closing fires visibilitychange (hidden=1, which would keep the server waiting for
+  // ever) and then pagehide; a beacon still gets out of an unloading page and says it is closing,
+  // which the server holds to even when the hidden=1 ping reaches it later. A reload clears it.
+  window.addEventListener("pagehide", () => { if (!state.closed) navigator.sendBeacon("/api/ping?hidden=0&closing=1"); });
   state.timer = setInterval(ping, PING_MS);
   $("noticeClose").addEventListener("click", hideNotice);
   wirePopover();

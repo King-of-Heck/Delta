@@ -1,5 +1,15 @@
 # Delta changelog
 
+## v2.12.6 — Delta keeps running while its window is open (2026-11-04)
+
+- Delta no longer stops while its window is minimized, covered or behind a locked screen. Before,
+  it could stop after about a minute and a half in the background, and coming back showed "Delta
+  is no longer running". It still stops a few seconds after the window is closed.
+- Starting Delta quits any older Delta still running, so one left over after a browser crash does
+  not stay behind.
+- The log (`%LOCALAPPDATA%\Delta\delta.log`) says why Delta stopped: Quit, or how long it had
+  heard nothing from its window.
+
 ## v2.12.5 — Newer document as Modified (2026-10-28)
 
 - Two documents dropped together are put in order by when each was last saved, the newer one as

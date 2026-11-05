@@ -30,6 +30,7 @@ from .pdf.report import report_info
 from .pdf.writer import REPORTS, render
 from .pdfread.types import PdfRefused
 from .reader import documents, read_source
+from .server import previous
 from .server.app import DEFAULT_GRACE, DEFAULT_IDLE, serve
 from .server.shortcut import data_folder, desktop_folder, desktop_shortcut, write_shortcut
 
@@ -191,8 +192,21 @@ def main(argv) -> int:
             if logf is not None and logf is not sys.stdout:
                 print(line, file=logf, flush=True)
 
+        data = data_folder()
+        started = []
+
         def ready(url):
             emit(json.dumps({"url": url}))
+            # this server is now the one the next launch quits, and the one before it is quit:
+            # a hidden window keeps its server for as long as it stays open, so a server whose
+            # window was lost without a close (a crashed browser) lasts only until the next launch
+            try:
+                line = previous.take_over(data, url)
+                started.append(url)
+                if line:
+                    emit(line)
+            except Exception as e:                                          # noqa: BLE001
+                emit("previous server check failed " + ascii(str(e)))
 
         if values.get("--shortcut"):
             # the launcher's shortcut with the icon, refreshed on every start so a moved folder is
@@ -213,6 +227,11 @@ def main(argv) -> int:
             serve(port=port, open_browser="--no-browser" not in flags, idle=idle, grace=grace,
                   verbose=verbose, ready=ready, log=emit)
         finally:
+            for url in started:
+                try:
+                    previous.forget(data, url)
+                except Exception:                                           # noqa: BLE001
+                    pass
             if logf is not None and logf is not sys.stdout and logf is not sys.stderr:
                 logf.close()
         return 0

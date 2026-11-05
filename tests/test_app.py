@@ -337,25 +337,95 @@ def test_ping_reports_whether_the_page_is_hidden(srv):
     assert _json(srv.url + "api/ping?hidden=maybe", "POST", {}) == (400, {"error": "hidden must be 0 or 1"})
 
 
-def test_watchdog_gives_a_hidden_page_a_longer_silence():
+def _fake_server(**state):
     import types
     t = [0.0]
-    session = types.SimpleNamespace(last_seen=0.0, touch=lambda: None)
-    shut = []
-    server = types.SimpleNamespace(session=session, stopped=False, visited=True, hidden=True,
-                                   shutdown=lambda: shut.append(t[0]))
-    # a hidden page is throttled to one ping a minute: 60 s of silence is not a closed window
-    advances = iter([1.0] * 200)
+    session = types.SimpleNamespace(last_seen=0.0, touch=lambda: setattr(session, "last_seen", t[0]))
+    shut, said = [], []
+    server = types.SimpleNamespace(session=session, stopped=False, visited=True, hidden=False, closing=False,
+                                   shutdown=lambda: shut.append(t[0]), log=said.append)
+    for k, v in state.items():
+        setattr(server, k, v)
+    return t, server, shut, said
+
+
+def _run_watchdog(t, server, advances, idle=4.0, grace=0.0):
+    advances = iter(advances)
 
     def sleep(_):
         try:
             t[0] += next(advances)
-        except StopIteration:                     # pragma: no cover - the watchdog stops first
+        except StopIteration:
             server.stopped = True
 
-    appmod._watchdog(server, idle=4.0, grace=0.0, clock=lambda: t[0], sleep=sleep)
-    assert shut == [91.0]                         # survives 60 s, stops once HIDDEN_IDLE passes
-    assert appmod.HIDDEN_IDLE == 90.0
+    appmod._watchdog(server, idle=idle, grace=grace, clock=lambda: t[0], sleep=sleep)
+
+
+def test_watchdog_never_stops_for_a_hidden_page():
+    # Edge throttles a hidden window to one wake a minute or freezes it: hours of silence is not a close
+    t, server, shut, _ = _fake_server(hidden=True)
+    _run_watchdog(t, server, [1.0] * (6 * 3600))
+    assert shut == [] and not hasattr(appmod, "HIDDEN_IDLE")
+
+
+def test_watchdog_never_stops_for_a_hidden_page_after_a_sleep():
+    # the sleep check gives the grace back (visited=False); a hidden page still has no limit
+    t, server, shut, _ = _fake_server(hidden=True)
+    _run_watchdog(t, server, [1.0, 600.0] + [1.0] * 3600, grace=120.0)
+    assert shut == [] and server.visited is False
+
+
+def test_watchdog_logs_why_it_stopped():
+    t, server, shut, said = _fake_server()
+    _run_watchdog(t, server, [1.0] * 100)
+    assert shut == [5.0]
+    assert said == ["stopped: no request for 5 s (limit 4 s; visited=1 hidden=0 closing=0)"]
+
+
+def test_a_quit_is_logged():
+    lines = []
+    s = Served(Session(fonts=FakeResolver(), clock=lambda: WHEN))
+    s.server.log = lines.append
+    assert _json(s.url + "api/quit", "POST", {}) == (200, {"ok": True})
+    s.thread.join(5)
+    assert lines == ["stopped: Quit"]
+
+
+def test_a_close_is_final_even_when_its_hidden_ping_arrives_late(srv):
+    # a close sends hidden=1 (visibilitychange) and the closing beacon (pagehide), in either order
+    assert _json(srv.url + "api/ping?hidden=0&closing=1", "POST", {}) == (200, {"ok": True})
+    assert srv.server.closing is True and srv.server.hidden is False
+    assert _json(srv.url + "api/ping?hidden=1", "POST", {}) == (200, {"ok": True})
+    assert srv.server.hidden is False                 # so the watchdog applies the normal idle limit
+    t, server, shut, _ = _fake_server(hidden=srv.server.hidden, closing=srv.server.closing)
+    _run_watchdog(t, server, [1.0] * 100)
+    assert shut == [5.0]
+
+
+def test_a_hidden_ping_before_the_closing_beacon_is_taken_back(srv):
+    assert _json(srv.url + "api/ping?hidden=1", "POST", {}) == (200, {"ok": True})
+    assert srv.server.hidden is True
+    assert _json(srv.url + "api/ping?hidden=0&closing=1", "POST", {}) == (200, {"ok": True})
+    assert srv.server.hidden is False and srv.server.closing is True
+
+
+def test_a_reload_after_the_closing_beacon_clears_it(srv):
+    assert _json(srv.url + "api/ping?hidden=0&closing=1", "POST", {}) == (200, {"ok": True})
+    assert _req(srv.url)[0] == 200                    # the reloaded page asks for itself
+    assert srv.server.closing is False
+    assert _json(srv.url + "api/ping?hidden=0&closing=1", "POST", {}) == (200, {"ok": True})
+    assert _req(srv.url + "static/app.js")[0] == 200
+    assert srv.server.closing is False
+    assert _json(srv.url + "api/ping?hidden=0&closing=1", "POST", {}) == (200, {"ok": True})
+    assert _json(srv.url + "api/ping?hidden=0", "POST", {}) == (200, {"ok": True})
+    assert srv.server.closing is False
+    assert _json(srv.url + "api/ping?hidden=1", "POST", {}) == (200, {"ok": True})
+    assert srv.server.hidden is True                  # and the page may be hidden again
+
+
+def test_ping_checks_the_closing_flag(srv):
+    assert _json(srv.url + "api/ping?closing=maybe", "POST", {}) == (400, {"error": "closing must be 0 or 1"})
+    assert srv.server.closing is False
 
 
 def test_any_request_marks_the_server_visited(srv):

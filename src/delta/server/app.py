@@ -33,7 +33,6 @@ MAX_BODY = 64 * 1024 * 1024
 DRAIN_CAP = 256 * 1024 * 1024
 DEFAULT_IDLE = 8.0          # seconds without a request, once the page has been seen (it pings every 2 s)
 DEFAULT_GRACE = 120.0       # seconds allowed before the first request (a cold Edge start)
-HIDDEN_IDLE = 90.0          # above Chromium's one-wake-per-minute floor for a page hidden over five minutes
 HOST = "127.0.0.1"
 
 
@@ -258,6 +257,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/" or path.startswith("/static/"):
                 if method != "GET":
                     raise _Bad(405, "method not allowed")
+                self.server.closing = False     # a page loading (a reload after pagehide) is not closing
                 name = "index.html" if path == "/" else path[len("/static/"):]
                 data = _static_bytes(name)
                 if data is None:
@@ -294,13 +294,24 @@ class Handler(BaseHTTPRequestHandler):
         self._json(payload)
 
     def _api_ping(self, session, query):
+        """A hidden page has no idle limit, so the close must be final: the closing beacon
+        (`closing=1`, sent on pagehide) is not undone by the hidden=1 ping of the same close
+        arriving after it. A page that loads or pings visible again (a reload) clears it."""
         hidden = _flag(query, "hidden", False)
+        closing = _flag(query, "closing", False)
         self._drain()
-        self.server.hidden = hidden
+        server = self.server
+        if closing:
+            server.closing, server.hidden = True, False
+        elif not hidden:
+            server.closing, server.hidden = False, False
+        elif not server.closing:
+            server.hidden = True
         self._json({"ok": True})
 
     def _api_quit(self, session, query):
         self._drain()
+        _say(self.server, "stopped: Quit")
         self._json({"ok": True})
         threading.Thread(target=self.server.shutdown, daemon=True).start()
 
@@ -397,7 +408,19 @@ def make_server(session: Session, host: str = HOST, port: int = 0, verbose: bool
     server.stopped = False
     server.visited = False
     server.hidden = False
+    server.closing = False
+    server.log = None
     return server
+
+
+def _say(server, line: str) -> None:
+    """One line to the serve log, when there is one; a failing log never stops anything."""
+    log = getattr(server, "log", None)
+    if log is not None:
+        try:
+            log(line)
+        except Exception:                                           # noqa: BLE001
+            pass
 
 
 def url_of(server) -> str:
@@ -410,7 +433,9 @@ def _watchdog(server, idle: float, grace: float, clock=time.monotonic, sleep=tim
     first one, so a slow browser start is not mistaken for a closed window. A gap between two
     ticks far longer than the tick means the machine slept (the page could not ping); that counts
     as a touch, not as silence, and the page gets its grace back to resume. A page that says it is
-    hidden gets HIDDEN_IDLE instead: a hidden window's timers are throttled to one wake a minute."""
+    hidden has no limit at all, after a sleep too: Edge throttles a hidden window's timers to one
+    wake a minute or freezes it outright, and the window may come back hours later. The close is
+    signalled by the page's closing beacon, which clears `hidden`."""
     step = max(0.05, min(1.0, idle / 4))
     last = clock()
     while not server.stopped:
@@ -422,10 +447,14 @@ def _watchdog(server, idle: float, grace: float, clock=time.monotonic, sleep=tim
         last = now
         if server.stopped:
             return
+        if server.hidden:
+            continue
         limit = idle if server.visited else max(idle, grace)
-        if server.visited and server.hidden:
-            limit = max(limit, HIDDEN_IDLE)
-        if now - server.session.last_seen > limit:
+        silence = now - server.session.last_seen
+        if silence > limit:
+            _say(server, f"stopped: no request for {silence:.0f} s (limit {limit:g} s; "
+                         f"visited={int(server.visited)} hidden={int(server.hidden)} "
+                         f"closing={int(getattr(server, 'closing', False))})")
             server.shutdown()
             return
 
@@ -447,6 +476,7 @@ def serve(port: int = 0, open_browser: bool = True, idle: float = DEFAULT_IDLE, 
     logging.getLogger("fontTools").setLevel(logging.ERROR)     # "'created' timestamp seems very low"
     session = Session(fonts=fonts, log=log)
     server = make_server(session, port=port, verbose=verbose)
+    server.log = log
     url = url_of(server)
     if ready is not None:
         ready(url)

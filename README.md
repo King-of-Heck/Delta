@@ -176,9 +176,11 @@ numbers stay legible below 100 % zoom on screen.
 
 The server keeps one comparison in memory, stops on Quit, and stops by itself a few seconds
 after the window closes (`--idle=SECONDS` after the last request, default 8, 0 = never;
-`--grace=SECONDS` before the first request, default 120); `--port=N` fixes the port,
+`--grace=SECONDS` before the first request, default 120). While the window is minimized or
+covered it keeps running however long that lasts, and starting Delta again quits any older
+Delta still running. `--port=N` fixes the port,
 `--no-browser` only prints the URL, `--verbose` logs requests, `--log=PATH` writes the start
-line and any error to a file. Change bars, change numbers
+line, why the server stopped and any error to a file. Change bars, change numbers
 and the summary exist only in the viewer and the PDF; nothing is written to Word.
 
 The corpus gate `tests/parity/test_viewer.py` checks that every pair's viewer payload has one
