@@ -127,3 +127,86 @@ def test_a_run_ending_in_spaces_has_its_ink_end_before_them():
     assert a.x1 == pytest.approx(87.0)                       # the pen moves past the two spaces ...
     assert a.ink_x1 == pytest.approx(82.0)                   # ... the ink stops after the B
     assert blank.ink_x1 == pytest.approx(blank.x0)          # nothing inked: the ink ends where it starts
+
+
+def _reference_runs(ops, fonts, base):
+    """The text runs as the interpreter first worked them out, one mul() per glyph: the yardstick
+    the written-out arithmetic must match to the last bit."""
+    from delta.pdfread.content import _State
+    from delta.pdfread.types import TextRun
+    st, stack, tm, runs, unknown = _State(), [], IDENT, [], PdfFont("Unknown")
+    for operands, op in ops:
+        if op == b"q":
+            stack.append(st.copy())
+        elif op == b"Q":
+            if stack:
+                st = stack.pop()
+        elif op == b"cm":
+            st.ctm = mul(tuple(operands), st.ctm)
+        elif op == b"Tf":
+            st.font_name, st.size = operands[0], float(operands[1])
+        elif op == b"Tc":
+            st.tc = float(operands[0])
+        elif op == b"Tw":
+            st.tw = float(operands[0])
+        elif op == b"Tz":
+            st.th = float(operands[0]) / 100.0
+        elif op == b"Ts":
+            st.rise = float(operands[0])
+        elif op == b"Tm":
+            tm = tuple(operands)
+        elif op == b"TJ":
+            for item in operands[0]:
+                if not isinstance(item, bytes):
+                    tm = mul((1.0, 0.0, 0.0, 1.0, -float(item) / 1000.0 * st.size * st.th, 0.0), tm)
+                    continue
+                font = fonts.get(st.font_name, unknown)
+                full = mul(st.ctm, base)
+                m = mul(tm, full)
+                x_start, y_start = apply(m, 0.0, st.rise)
+                pieces, ink_tm = [], tm
+                for code, text, w in font.decode(item):
+                    pieces.append(text)
+                    tx = (w / 1000.0 * st.size + st.tc + (st.tw if font.nbytes == 1 and code == 32 else 0.0)) * st.th
+                    tm = mul((1.0, 0.0, 0.0, 1.0, tx, 0.0), tm)
+                    if text.strip():
+                        ink_tm = tm
+                text = "".join(pieces).replace("\x00", "")
+                upright = m[0] > 0 and m[3] < 0 and abs(m[1]) < 0.01 * abs(m[0]) and abs(m[2]) < 0.01 * abs(m[3])
+                if text and upright:
+                    runs.append(TextRun(text, x_start, apply(mul(tm, full), 0.0, st.rise)[0], y_start,
+                                        st.size * abs(m[3]), font.name, apply(mul(ink_tm, full), 0.0, st.rise)[0]))
+    return runs
+
+
+def test_text_positions_match_the_one_matrix_per_glyph_arithmetic_to_the_last_bit():
+    import random
+    rng = random.Random(11)
+    fonts = {"/F1": F, "/F2": PdfFont("XYZ+Times", widths={65: 722.0, 32: 250.0, 0: 0.0}, default_width=333.3)}
+    vals = [0.0, -0.0, 1.0, -1.0, 0.1, 7.3, -12.25, 1e-9, 1000.0, 0.333]
+    strings = [b"AB", b"A B", b"  ", b" A", b"A ", b"\x00", b"\x00A\x00", b"BBB  A", b"", b"Z"]
+    memo = {}
+    for _ in range(300):
+        ops = [([], b"BT")]
+        for _ in range(rng.randint(1, 12)):
+            k = rng.randint(0, 7)
+            if k == 0:
+                ops.append(([rng.choice(["/F1", "/F2", "/F9"]), rng.choice([9.96, 12.0, -3.0, 0.0])], b"Tf"))
+            elif k == 1:
+                ops.append(([rng.choice(vals)], rng.choice([b"Tc", b"Tw", b"Ts"])))
+            elif k == 2:
+                ops.append(([rng.choice([100.0, 85.5, -50.0, 0.0])], b"Tz"))
+            elif k == 3:
+                ops.append(([rng.choice(vals + [1.0] * 6) for _ in range(6)], b"Tm"))
+            elif k == 4:
+                ops += [([], b"q"), ([rng.choice(vals + [1.0] * 6) for _ in range(6)], b"cm")]
+            elif k == 5:
+                ops.append(([], b"Q"))
+            else:
+                ops.append(([[rng.choice(strings + [rng.choice(vals), -250])
+                              for _ in range(rng.randint(1, 5))]], b"TJ"))
+        base = base_matrix(LETTER, rng.choice([0, 90, 180, 270]))
+        page = PageData(612, 792)
+        expected = _reference_runs(ops, fonts, base)
+        interpret(ops, fonts, {}, base, page, memo)
+        assert [repr(r) for r in page.runs] == [repr(r) for r in expected]

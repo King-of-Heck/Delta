@@ -1,6 +1,7 @@
 """Open a PDF and hand each page's drawing to the interpreter. The ONLY module that imports
 pypdf, and only inside its functions, so a Word-only run never loads it. pypdf does the file
-structure (cross-references, filters, decryption, tokenizing); the reading is ours."""
+structure (cross-references, filters, decryption; tokenizing the streams tokens.py does not take);
+the reading is ours."""
 from __future__ import annotations
 
 import io
@@ -8,6 +9,7 @@ from datetime import datetime, timezone
 
 from .content import base_matrix, interpret
 from .pdffonts import PdfFont, load_font
+from .tokens import parse as parse_content
 from .types import PageData, PdfRefused
 
 NO_TEXT = ("This PDF has no text, so it looks scanned. Delta can only compare PDFs "
@@ -93,7 +95,7 @@ def page_count_and_date(data: bytes) -> tuple[int, datetime | None]:
     return pages, when
 
 
-def _page(reader, page, font_cache: dict) -> PageData:
+def _page(reader, page, font_cache: dict, memo: dict | None = None) -> PageData:
     from pypdf.generic import ContentStream
     box = tuple(float(v) for v in page.cropbox)
     rotation = int(page.rotation or 0) % 360
@@ -118,20 +120,23 @@ def _page(reader, page, font_cache: dict) -> PageData:
         xobjects[str(name)] = "image" if str(_obj(ref).get("/Subtype")) == "/Image" else "form"
     contents = page.get_contents()
     if contents is not None:
-        ops = [([_plain(o) for o in operands], bytes(op))
-               for operands, op in ContentStream(contents, reader).operations]
-        interpret(ops, fonts, xobjects, base_matrix(box, rotation), out)
+        stream = ContentStream(contents, reader)
+        ops = parse_content(stream.get_data())        # our fast reader; None = leave it to pypdf
+        if ops is None:
+            ops = [([_plain(o) for o in operands], bytes(op)) for operands, op in stream.operations]
+        interpret(ops, fonts, xobjects, base_matrix(box, rotation), out, memo)
     return out
 
 
 def extract_pages(data: bytes, progress=None) -> list[PageData]:
     reader = _reader(data)
     font_cache: dict = {}
+    memo: dict = {}                    # decoded strings, kept from page to page
     try:
         total = len(reader.pages)
         out = []
         for i, page in enumerate(reader.pages):
-            out.append(_page(reader, page, font_cache))
+            out.append(_page(reader, page, font_cache, memo))
             if progress is not None:
                 progress(i + 1, total)
         return out

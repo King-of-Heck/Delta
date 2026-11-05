@@ -11,6 +11,10 @@ THIN = 3.0            # pt: a filled rectangle no thicker than this is a drawn b
 _STROKE = {b"S", b"s", b"B", b"B*", b"b", b"b*"}
 _FILL = {b"f", b"F", b"f*", b"B", b"B*", b"b", b"b*"}
 _CLOSE = {b"s", b"b", b"b*"}
+# every operator the loop below acts on; the rest (colours, clipping, marked content) are skipped
+_HANDLED = frozenset({b"q", b"Q", b"cm", b"BT", b"Tf", b"Tc", b"Tw", b"Tz", b"TL", b"Ts", b"Td", b"TD",
+                      b"Tm", b"T*", b"Tj", b"'", b'"', b"TJ", b"m", b"l", b"h", b"re", b"c", b"v", b"y",
+                      b"n", b"Do", b"INLINE IMAGE"}) | _STROKE | _FILL
 
 
 def mul(a, b):
@@ -22,6 +26,11 @@ def mul(a, b):
 
 def apply(m, x, y):
     return (x * m[0] + y * m[2] + m[4], x * m[1] + y * m[3] + m[5])
+
+
+def _x_at(t, f, rise):
+    """apply(mul(t, f), 0.0, rise)[0]: the same sums in the same order, the x alone."""
+    return 0.0 * (t[0] * f[0] + t[1] * f[2]) + rise * (t[2] * f[0] + t[3] * f[2]) + (t[4] * f[0] + t[5] * f[2] + f[4])
 
 
 def base_matrix(box, rotation: int):
@@ -51,41 +60,86 @@ class _State:
         return s
 
 
-def interpret(ops, fonts: dict[str, PdfFont], xobjects: dict[str, str], base, page: PageData) -> None:
+def interpret(ops, fonts: dict[str, PdfFont], xobjects: dict[str, str], base, page: PageData,
+              memo: dict | None = None) -> None:
+    """`memo` keeps decoded strings between calls: one dict for all the pages of a document (whose
+    fonts do not change while it is read)."""
     st, stack = _State(), []
     tm = tlm = IDENT
     subpaths: list[list] = []        # each: a list of (x, y) in user space; closed ones repeat the first point
     unknown = PdfFont("Unknown")
+    memo = {} if memo is None else memo
+    full_ctm = full_m = None
 
     def full():
-        return mul(st.ctm, base)
+        nonlocal full_ctm, full_m
+        if st.ctm is not full_ctm:   # the same matrix until a cm or a Q changes the ctm
+            full_ctm, full_m = st.ctm, mul(st.ctm, base)
+        return full_m
+
+    def decoded(font: PdfFont, raw: bytes):
+        """(text, its replacement count, the glyphs up to the last non-blank one, the glyphs after
+        it), a glyph as (width / 1000, a word space?); a string is decoded once per font."""
+        per = memo.get(id(font))
+        if per is None:              # the font is kept with its strings, so its id is not reused
+            per = memo[id(font)] = (font, {})
+        pieces, adv, ink = [], [], 0
+        for code, text, w in font.decode(raw):
+            pieces.append(text)
+            adv.append((w / 1000.0, font.nbytes == 1 and code == 32))
+            if text.strip():
+                ink = len(adv)
+        text = "".join(pieces).replace("\x00", "")
+        got = per[1][raw] = (text, text.count(REPLACEMENT), tuple(adv[:ink]), tuple(adv[ink:]))
+        return got
 
     def show(raw: bytes):
         nonlocal tm
         if not isinstance(raw, bytes):
             return                # a malformed operand: nothing shown, nothing moved
-        no_font = st.font_name not in fonts
         font = fonts.get(st.font_name, unknown)
-        m = mul(tm, full())
-        x_start, y_start = apply(m, 0.0, st.rise)
-        pieces = []
-        ink_tm = tm                   # the text matrix after the last non-blank glyph
-        for code, text, w in font.decode(raw):
-            pieces.append(text)
-            tx = (w / 1000.0 * st.size + st.tc + (st.tw if font.nbytes == 1 and code == 32 else 0.0)) * st.th
-            tm = mul((1.0, 0.0, 0.0, 1.0, tx, 0.0), tm)
-            if text.strip():
-                ink_tm = tm
-        x_end, _ = apply(mul(tm, full()), 0.0, st.rise)
-        ink_end, _ = apply(mul(ink_tm, full()), 0.0, st.rise)
-        text = "".join(pieces).replace("\x00", "")
-        upright = m[0] > 0 and m[3] < 0 and abs(m[1]) < 0.01 * abs(m[0]) and abs(m[2]) < 0.01 * abs(m[3])
-        if text and upright:
+        per = memo.get(id(font))
+        got = per[1].get(raw) if per is not None else None
+        text, bad, upto_ink, after_ink = got if got is not None else decoded(font, raw)
+        start = tm
+        if upto_ink or after_ink:
+            # the text matrix after each glyph: mul((1, 0, 0, 1, tx, 0), tm) written out, the same
+            # operations in the same order, so the same result to the last bit
+            size, tc, tw, th = st.size, st.tc, st.tw, st.th
+            t0, t1, t2, t3, t4, t5 = tm
+            for wk, space in upto_ink:
+                tx = (wk * size + tc + (tw if space else 0.0)) * th
+                t0, t1, t2, t3, t4, t5 = (1.0 * t0 + 0.0 * t2, 1.0 * t1 + 0.0 * t3,
+                                          0.0 * t0 + 1.0 * t2, 0.0 * t1 + 1.0 * t3,
+                                          tx * t0 + 0.0 * t2 + t4, tx * t1 + 0.0 * t3 + t5)
+            ink_tm = tm = (t0, t1, t2, t3, t4, t5) if upto_ink else tm   # after the last non-blank glyph
+            for wk, space in after_ink:
+                tx = (wk * size + tc + (tw if space else 0.0)) * th
+                t0, t1, t2, t3, t4, t5 = (1.0 * t0 + 0.0 * t2, 1.0 * t1 + 0.0 * t3,
+                                          0.0 * t0 + 1.0 * t2, 0.0 * t1 + 1.0 * t3,
+                                          tx * t0 + 0.0 * t2 + t4, tx * t1 + 0.0 * t3 + t5)
+            if after_ink:
+                tm = (t0, t1, t2, t3, t4, t5)
+        if not text:
+            return
+        f = full()
+        f0, f1, f2, f3, f4, f5 = f
+        s0, s1, s2, s3, s4, s5 = start
+        # m = mul(start, f) written out
+        m0, m1, m2, m3 = s0 * f0 + s1 * f2, s0 * f1 + s1 * f3, s2 * f0 + s3 * f2, s2 * f1 + s3 * f3
+        if m0 > 0 and m3 < 0 and abs(m1) < 0.01 * abs(m0) and abs(m2) < 0.01 * abs(m3):
+            rise = st.rise
+            # apply(m, 0.0, rise) written out
+            x_start = 0.0 * m0 + rise * m2 + (s4 * f0 + s5 * f2 + f4)
+            y_start = 0.0 * m1 + rise * m3 + (s4 * f1 + s5 * f3 + f5)
+            # apply(mul(t, f), 0.0, rise) for the end and the ink end, each worked out once
+            x_end = _x_at(tm, f, rise)
+            ink_end = x_end if ink_tm is tm else x_start if ink_tm is start else _x_at(ink_tm, f, rise)
             page.chars += len(text)
-            page.bad_chars += text.count(REPLACEMENT)
-            if no_font:
+            page.bad_chars += bad
+            if font is unknown:      # not one of the page's fonts
                 page.bad_chars += len(text)
-            page.runs.append(TextRun(text, x_start, x_end, y_start, st.size * abs(m[3]), font.name, ink_end))
+            page.runs.append(TextRun(text, x_start, x_end, y_start, st.size * abs(m3), font.name, ink_end))
 
     def newline(tx: float, ty: float):
         nonlocal tm, tlm
@@ -127,6 +181,8 @@ def interpret(ops, fonts: dict[str, PdfFont], xobjects: dict[str, str], base, pa
 
     for operands, op in ops:
         try:
+            if op not in _HANDLED:
+                continue
             if op == b"q":
                 stack.append(st.copy())
             elif op == b"Q":
@@ -170,8 +226,11 @@ def interpret(ops, fonts: dict[str, PdfFont], xobjects: dict[str, str], base, pa
                 for item in operands[0]:
                     if isinstance(item, bytes):
                         show(item)
-                    else:
-                        tm = mul((1.0, 0.0, 0.0, 1.0, -float(item) / 1000.0 * st.size * st.th, 0.0), tm)
+                    else:                # mul((1, 0, 0, 1, tx, 0), tm) written out
+                        tx = -float(item) / 1000.0 * st.size * st.th
+                        t0, t1, t2, t3, t4, t5 = tm
+                        tm = (1.0 * t0 + 0.0 * t2, 1.0 * t1 + 0.0 * t3, 0.0 * t0 + 1.0 * t2, 0.0 * t1 + 1.0 * t3,
+                              tx * t0 + 0.0 * t2 + t4, tx * t1 + 0.0 * t3 + t5)
             elif op == b"m":
                 subpaths.append([(float(operands[0]), float(operands[1]))])
             elif op == b"l":

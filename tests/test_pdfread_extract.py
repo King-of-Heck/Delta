@@ -110,3 +110,10 @@ def test_importing_the_reader_does_not_import_pypdf():
     code = "import sys, delta.pdfread.extract, delta.pdfread.content; print('pypdf' in sys.modules)"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "False"
+
+
+def test_a_stream_the_fast_reader_leaves_to_pypdf_reads_the_same(monkeypatch):
+    data = make_pdf(ONE + [[("text", 72, 100, 12, "Second (page)"), ("line", 72, 300, 400, 300)]])
+    fast = extract_pages(data)
+    monkeypatch.setattr(extract, "parse_content", lambda _data: None)
+    assert extract_pages(data) == fast
