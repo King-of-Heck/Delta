@@ -904,6 +904,11 @@ def test_text_refuses_too_much(srv):
     assert _json(srv.url + "api/text", "POST", {"a": "é" * (TEXT_MAX_BYTES // 2 + 1), "b": ""})[0] == 413
 
 
+def test_text_refuses_a_broken_character(srv):
+    raw = rb'{"a": "\ud800x", "b": "y"}'
+    assert _json(srv.url + "api/text", "POST", raw=raw) == (400, {"error": "the text contains a broken character"})
+
+
 def test_text_is_refused_cross_origin(srv):
     assert _post_with_headers(srv.url + "api/text", {"Origin": "http://evil.example"}) == \
         (403, {"error": "cross-origin request refused"})

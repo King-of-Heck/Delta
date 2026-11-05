@@ -20,9 +20,9 @@ from .. import __version__
 from ..docx.package import Package, saved_date
 from ..docx.revisions import count_revisions
 from ..reader import kind_of
+from ..textread import TEXT_MAX_BYTES, compare_texts
 from .session import BadRequest, NoComparison, Session, check_render, parse_options, parse_sides
 from .launch import open_viewer
-from ..textread import TEXT_MAX_BYTES, compare_texts
 from ..worker import Worker
 
 STATIC = {"index.html": "text/html; charset=utf-8", "style.css": "text/css; charset=utf-8",
@@ -364,8 +364,13 @@ class Handler(BaseHTTPRequestHandler):
         a, b = body.get("a"), body.get("b")
         if not isinstance(a, str) or not isinstance(b, str):
             raise _Bad(400, "a and b must be text")
-        if max(len(a.encode("utf-8")), len(b.encode("utf-8"))) > TEXT_MAX_BYTES:
+        if max(len(a.encode("utf-8", "surrogatepass")), len(b.encode("utf-8", "surrogatepass"))) > TEXT_MAX_BYTES:
             raise _Bad(413, f"too much text to compare (over {TEXT_MAX_BYTES} bytes on one side)")
+        try:
+            a.encode("utf-8")
+            b.encode("utf-8")
+        except UnicodeEncodeError:                  # a lone UTF-16 surrogate that came through JSON
+            raise _Bad(400, "the text contains a broken character") from None
         options = parse_options(body.get("options", {}))
         self._json(compare_texts(a, b, ignore_case=options.ignore_case))
 
