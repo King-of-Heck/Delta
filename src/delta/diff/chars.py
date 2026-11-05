@@ -50,14 +50,19 @@ def _spans(p: Paragraph) -> list[list]:
     out: list[list] = []
     n = 0                       # collapsed characters so far
     last_space = False          # the last collapsed character is a space
+    # The fmt tuple object out[-1] was last put with, while its formatting fields are untouched
+    # since (None once the bold swallow below edits them): the words of one run then extend their
+    # span without the tuple(last[_B:]) comparison.
+    last_fmt = None
 
     def put(length: int, fmt: tuple) -> None:
-        nonlocal n
+        nonlocal n, last_fmt
         last = out[-1] if out else None
-        if last is not None and tuple(last[_B:]) == fmt:
+        if last is not None and (last_fmt is fmt or tuple(last[_B:]) == fmt):
             last[_E] += length
         else:
             out.append([n, n + length, *fmt])
+        last_fmt = fmt
         n += length
 
     for run in p.runs:
@@ -73,6 +78,7 @@ def _spans(p: Paragraph) -> list[list]:
                     # swallowed by the space before it: that space keeps its formatting but takes this bold
                     last = out[-1]
                     if pr.bold and not last[_B]:
+                        last_fmt = None
                         if last[_E] - last[_S] == 1:
                             last[_B] = True
                             if len(out) > 1 and tuple(out[-2][_B:]) == tuple(last[_B:]):

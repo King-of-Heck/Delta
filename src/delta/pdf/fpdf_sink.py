@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fpdf import FPDF
+from fpdf.drawing_primitives import convert_to_device_color
 from fpdf.enums import TextMode
 
 from .painter import rgb
@@ -25,6 +26,7 @@ class FpdfPainter:
         if creation is not None:
             self.pdf.set_creation_date(creation)
         self._fonts: dict[tuple[str, int], str] = {}
+        self._colors: dict[str, object] = {}       # 6-hex -> fpdf2 device colour (see _color)
 
     # -- Painter ---------------------------------------------------------------------------
     def page(self, w: float, h: float) -> None:
@@ -37,7 +39,7 @@ class FpdfPainter:
             return
         p = self.pdf
         p.set_font(self._family(face), "", size)
-        p.set_text_color(*rgb(color))
+        p.set_text_color(self._color(color))
         if not fake_bold:
             self._emit(x, baseline, text, fake_italic)
             return
@@ -58,7 +60,7 @@ class FpdfPainter:
 
     def rule(self, x1: float, x2: float, y: float, thickness: float, color: str, dotted: bool = False) -> None:
         p = self.pdf
-        p.set_draw_color(*rgb(color))
+        p.set_draw_color(self._color(color))
         p.set_line_width(thickness)
         if dotted:
             p.set_dash_pattern(dash=DASH, gap=DASH_GAP)
@@ -68,18 +70,26 @@ class FpdfPainter:
 
     def line(self, x1: float, y1: float, x2: float, y2: float, width: float, color: str) -> None:
         p = self.pdf
-        p.set_draw_color(*rgb(color))
+        p.set_draw_color(self._color(color))
         p.set_line_width(width)
         p.line(x1, y1, x2, y2)
 
     def box(self, x: float, y: float, w: float, h: float, color: str) -> None:
         p = self.pdf
-        p.set_fill_color(*rgb(color))
+        p.set_fill_color(self._color(color))
         p.rect(x, y, w, h, style="F")
 
     # -- output -----------------------------------------------------------------------------
     def output(self) -> bytes:
         return bytes(self.pdf.output())
+
+    def _color(self, color: str):
+        """fpdf2's device colour for a 6-hex colour, converted once per colour (as fpdf2 itself
+        converts an (r, g, b) triple; the colour objects are frozen values)."""
+        dev = self._colors.get(color)
+        if dev is None:
+            dev = self._colors[color] = convert_to_device_color(*rgb(color))
+        return dev
 
     def _family(self, face) -> str:
         key = (face.path, face.font_number)

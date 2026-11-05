@@ -53,6 +53,7 @@ class Package:
     def __init__(self, zf: zipfile.ZipFile):
         self._zf = zf
         self._names = set(zf.namelist())
+        self._trees: dict = {}           # part name -> parsed root (None when absent), see xml()
 
     @classmethod
     def open(cls, src) -> "Package":
@@ -79,10 +80,15 @@ class Package:
         return self._zf.read(name)
 
     def xml(self, name: str):
+        """The part's parsed tree, parsed once per package: the body is read by the parser and
+        again by the revision count, and no reader changes a tree."""
+        if name in self._trees:
+            return self._trees[name]
         data = self.part(name)
-        if data is None:
-            return None
-        return etree.fromstring(_ensure_w_namespace(data), parser=etree.XMLParser(huge_tree=True, recover=True))
+        root = None if data is None else etree.fromstring(
+            _ensure_w_namespace(data), parser=etree.XMLParser(huge_tree=True, recover=True))
+        self._trees[name] = root
+        return root
 
     def rels(self, part_name: str) -> dict[str, str]:
         d, f = posixpath.split(part_name)

@@ -74,7 +74,14 @@ def fmt_diff(a: list[FmtSpan], b: list[FmtSpan]) -> list[FmtRange]:
     out: list[FmtRange] = []
     run: FmtRange | None = None
     a_cur, b_cur = RangeCursor(a), RangeCursor(b)
-    for pos in range(end):
+    # What the cursors return can only change at a span's start or end, so the positions are
+    # walked a segment at a time (between consecutive span edges) instead of one by one: every
+    # position of a segment would get the same pair of spans, so the same decision.
+    edges = sorted({0, end, *(x.s for x in a), *(x.e for x in a), *(x.s for x in b), *(x.e for x in b)})
+    for pos, stop in zip(edges, edges[1:]):
+        if pos < 0 or pos >= end:
+            continue
+        stop = min(stop, end)
         av, bv = a_cur.at(pos), b_cur.at(pos)
         if av is None or bv is None or av.same_fmt(bv):
             if run:
@@ -83,11 +90,11 @@ def fmt_diff(a: list[FmtSpan], b: list[FmtSpan]) -> list[FmtRange]:
             continue
         desc = fmt_desc(av, bv)
         if run and run.desc == desc and run.e == pos:
-            run.e = pos + 1
+            run.e = stop
         else:
             if run:
                 out.append(run)
-            run = FmtRange(pos, pos + 1, desc)
+            run = FmtRange(pos, stop, desc)
     if run:
         out.append(run)
     return out

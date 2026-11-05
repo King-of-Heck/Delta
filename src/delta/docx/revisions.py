@@ -39,5 +39,5 @@ def count_revisions(pkg: Package) -> int:
         root = pkg.xml(name)
         if root is None:
             continue
-        total += sum(1 for el in root.iter() if el.tag in REVISION_TAGS)
+        total += sum(1 for _ in root.iter(*REVISION_TAGS))     # lxml filters by tag in C
     return total

@@ -173,6 +173,25 @@ def test_relayout_reruns_the_comparison_with_the_new_options():
     assert s.options == Options(ignore_case=True)
 
 
+def test_a_show_option_change_keeps_the_comparison_and_a_compare_option_redoes_it(monkeypatch):
+    s = _session(P("Alpha") + P("Beta gamma"), P("Alpha") + P("beta gamma"))
+    first = s.cmp
+    calls = []
+    real = session_module.compare
+    monkeypatch.setattr(session_module, "compare", lambda *a, **k: calls.append(1) or real(*a, **k))
+    s.relayout(Options(show_equal=False, show_formatting=False))
+    assert s.cmp is first and calls == []
+    fresh = Session(fonts=FR, clock=lambda: WHEN)
+    fresh.load("a.docx", _docx(P("Alpha") + P("Beta gamma")), "b.docx", _docx(P("Alpha") + P("beta gamma")),
+               options=Options(show_equal=False, show_formatting=False))
+    assert s.payload() == fresh.payload()                  # the same pages as a comparison made afresh
+    calls.clear()
+    s.relayout(Options(show_equal=False, count_numbering=False))
+    assert calls == [1] and s.cmp is not first
+    s.relayout(Options(ignore_case=True))
+    assert calls == [1, 1] and s.payload()["summary"]["total"] == 0
+
+
 def test_hidden_insertions_leave_the_page_and_load_keeps_the_current_options():
     s = _session(options=Options(show_insertions=False))
     assert "bbbb" not in s.payload()["pages"][0] and s.options.show_insertions is False

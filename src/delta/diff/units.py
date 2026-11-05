@@ -105,11 +105,12 @@ def walk(doc: Document) -> Iterator[tuple[Paragraph, Loc | None, Where]]:
 def units(doc: Document) -> list[Unit]:
     out: list[Unit] = []
     for p, loc, where in walk(doc):
-        if p.is_empty:
+        text = p.text                   # collapsed once: is_empty is text == ""
+        if text == "":
             continue
         bold, spans = char_fmt(p)
         lead, marks = tab_marks(p)
-        out.append(Unit(len(out), p.text, p.num.marker if p.num else "", bold, spans, loc, p, lead, marks,
+        out.append(Unit(len(out), text,p.num.marker if p.num else "", bold, spans, loc, p, lead, marks,
                         where.stream, where.note, note_marks(p), where.part))
     return out
 

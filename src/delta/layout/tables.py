@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..diff.units import table_by_ti
+from ..model import Table
 from .blocks import collapse_spacing, Ctx, ParaBlock, para_block
 from .merged import Item
 from .pieces import visible
@@ -118,9 +118,18 @@ def table_runs(items: list[Item], maps: tuple) -> list[tuple[int, int]]:
 
 def table_blocks(group: list[Item], ctx: Ctx) -> list:
     docs = {"a": ctx.cmp.a_doc, "b": ctx.cmp.b_doc}
+    tops: dict = {}
+
+    def table_at(s: str, i: int) -> Table:
+        # table_by_ti, with each side's top-level tables listed once per group, not once per row
+        got = tops.get(s)
+        if got is None:
+            got = tops[s] = [b for b in docs[s].blocks if isinstance(b, Table)]
+        return got[i]
+
     tmap, rmap = ctx_maps(ctx)
     side, ti = _table_key(group[0], tmap)
-    table = table_by_ti(docs[side], ti)
+    table = table_at(side, ti)
     cols = max(1, len(table.grid_pt) or max((len(r.cells) for r in table.rows), default=0))
     tx = table.ind_pt
     avail_w = max(MIN_CELL_W, ctx.content_w - tx)
@@ -146,7 +155,7 @@ def table_blocks(group: list[Item], ctx: Ctx) -> list:
 
     out: list = []
     for gi, (k, its) in enumerate(row_groups):
-        mrow = table_by_ti(docs[k[0]], k[1]).rows[k[2]]
+        mrow = table_at(k[0], k[1]).rows[k[2]]
         by_ci: dict[int, list[Item]] = {}
         for it in its:
             by_ci.setdefault(min(it.loc.ci, len(mrow.cells) - 1), []).append(it)

@@ -21,6 +21,7 @@ def _n(v: float) -> str:
 class SvgPainter:
     def __init__(self):
         self._pages: list[list[str]] = []
+        self._families: dict[str, str] = {}      # family -> its quoted font-family attribute value
 
     # -- Painter ---------------------------------------------------------------------------
     def page(self, w: float, h: float) -> None:
@@ -35,26 +36,33 @@ class SvgPainter:
         if getattr(face, "symbol", False) and role != "gutter":
             self._outlines(x, baseline, text, face, size, color, fake_bold, fake_italic)
             return
-        attrs = [f'x="{_n(x)}"', f'y="{_n(baseline)}"', f"font-family={quoteattr(face.family)}",
-                 f'font-size="{_n(size)}"', f'fill="#{color}"']
+        # One string per run, built in place (this is the hot path of the on-screen pages); the
+        # attributes and number formats are exactly those of _n and escape.
+        family = self._families.get(face.family)
+        if family is None:
+            family = self._families[face.family] = quoteattr(face.family)
         if role == "gutter":
             # anchored at its right edge so the viewer can enlarge it leftwards, away from the bar
-            attrs[0] = f'x="{_n(x + (width or 0))}"'
-            attrs += ['class="gutter"', 'text-anchor="end"']
+            s = (f'<text x="{x + (width or 0):.2f}" y="{baseline:.2f}" font-family={family} '
+                 f'font-size="{size:.2f}" fill="#{color}" class="gutter" text-anchor="end"')
             width = None
+        else:
+            s = (f'<text x="{x:.2f}" y="{baseline:.2f}" font-family={family} '
+                 f'font-size="{size:.2f}" fill="#{color}"')
         if face.bold and not face.synthetic:
-            attrs.append('font-weight="bold"')
+            s += ' font-weight="bold"'
         if face.italic and not face.synthetic:
-            attrs.append('font-style="italic"')
+            s += ' font-style="italic"'
         if fake_bold:
-            attrs += [f'stroke="#{color}"', f'stroke-width="{_n(size * STROKE_FRACTION)}"']
+            s += f' stroke="#{color}" stroke-width="{size * STROKE_FRACTION:.2f}"'
         if fake_italic:
-            attrs.append(f'transform="translate({_n(x)} {_n(baseline)}) skewX(-{ITALIC_DEGREES}) '
-                         f'translate(-{_n(x)} -{_n(baseline)})"')
+            s += (f' transform="translate({x:.2f} {baseline:.2f}) skewX(-{ITALIC_DEGREES}) '
+                  f'translate(-{x:.2f} -{baseline:.2f})"')
         if width:
-            attrs += [f'textLength="{_n(width)}"', 'lengthAdjust="spacing"']
-        attrs.append('xml:space="preserve"')
-        self._pages[-1].append(f"<text {' '.join(attrs)}>{escape(text)}</text>")
+            s += f' textLength="{width:.2f}" lengthAdjust="spacing"'
+        if "&" in text or "<" in text or ">" in text:
+            text = escape(text)
+        self._pages[-1].append(f'{s} xml:space="preserve">{text}</text>')
 
     def _outlines(self, x: float, baseline: float, text: str, face, size: float, color: str,
                   fake_bold: bool, fake_italic: bool) -> None:

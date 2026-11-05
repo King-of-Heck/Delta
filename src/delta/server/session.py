@@ -293,8 +293,16 @@ class Session:
             self.fonts = default_resolver()
         when = self._clock()
         t0 = perf_counter()
-        cmp = compare(a_doc, b_doc, ignore_case=options.ignore_case,
-                      count_numbering=options.count_numbering)
+        if (self.cmp is not None and a_doc is self.a_doc and b_doc is self.b_doc
+                and options.ignore_case == self.options.ignore_case
+                and options.count_numbering == self.options.count_numbering):
+            # The same two documents under the same compare options (a change of the show_*
+            # options only): the comparison would come out the same, and nothing downstream
+            # changes it, so the one already made is kept.
+            cmp = self.cmp
+        else:
+            cmp = compare(a_doc, b_doc, ignore_case=options.ignore_case,
+                          count_numbering=options.count_numbering)
         self._timed("compare", t0)
         base = options.layout_options(self.fonts)
         t0 = perf_counter()

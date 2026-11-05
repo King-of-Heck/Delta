@@ -17,6 +17,34 @@ _WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
 _R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 FIELDS = ("PAGE", "NUMPAGES")      # fields the layout fills live; their run text is the token {NAME}
 EMU_PER_PT = 12700.0
+# Clark names of the tags and attributes the paragraph walk tests, built once (hot loop).
+_W_p = wq("p")
+_W_tbl = wq("tbl")
+_W_r = wq("r")
+_W_rPr = wq("rPr")
+_W_fldChar = wq("fldChar")
+_W_fldCharType = wq("fldCharType")
+_W_instrText = wq("instrText")
+_W_t = wq("t")
+_W_delText = wq("delText")
+_W_drawing = wq("drawing")
+_W_tab = wq("tab")
+_W_br = wq("br")
+_W_type = wq("type")
+_W_noBreakHyphen = wq("noBreakHyphen")
+_W_sym = wq("sym")
+_W_cr = wq("cr")
+_W_footnoteReference = wq("footnoteReference")
+_W_endnoteReference = wq("endnoteReference")
+_W_id = wq("id")
+_W_commentReference = wq("commentReference")
+_W_fldSimple = wq("fldSimple")
+_W_instr = wq("instr")
+_W_commentRangeStart = wq("commentRangeStart")
+_W_commentRangeEnd = wq("commentRangeEnd")
+_W_pPr = wq("pPr")
+_W_pStyle = wq("pStyle")
+_W_sectPr = wq("sectPr")
 
 
 def field_name(instr: str | None) -> str | None:
@@ -40,6 +68,15 @@ class _Ctx:
         self.comment_anchors: dict = {}     # w:comment id -> docx.comments.CommentAnchor
         self.para_markers: list = []        # (cid, which, raw_offset) collected in _runs, folded in _paragraph
         self.raw_len = 0                    # concatenated raw run text length so far in this paragraph
+        self.style_props: dict = {}         # style id -> (resolved pPr, resolved rPr); styles never change mid-parse
+
+    def resolved(self, style_id) -> tuple[dict, dict]:
+        """The style chain's (pPr, rPr) dicts, resolved once per style id. Shared: read, never written."""
+        got = self.style_props.get(style_id)
+        if got is None:
+            got = self.style_props[style_id] = (self.styles.resolved_ppr(style_id),
+                                                self.styles.resolved_rpr(style_id))
+        return got
 
 
 def parse_docx(src) -> Document:
@@ -118,9 +155,9 @@ def _notes(root, kind: str, ctx: _Ctx) -> dict:
 def _blocks(parent, ctx: _Ctx) -> list:
     out = []
     for el in parent:
-        if el.tag == wq("p"):
+        if el.tag == _W_p:
             out.append(_paragraph(el, ctx))
-        elif el.tag == wq("tbl"):
+        elif el.tag == _W_tbl:
             out.append(_table(el, ctx))
         elif el.tag in _TRANSPARENT:
             out.extend(_blocks(el, ctx))
@@ -133,13 +170,16 @@ def _runs(el, ctx: _Ctx, para_rpr: dict, out: list[Run], state: dict):
         tag = child.tag
         if tag in _SKIP:
             continue
-        if tag == wq("r"):
-            props = _run_props(child.find(wq("rPr")), para_rpr, ctx)
+        if tag == _W_r:
+            props = _run_props(child.find(_W_rPr), para_rpr, ctx)
             buf = []
             fld = state.setdefault("field", None)
             for x in child:
-                if x.tag == wq("fldChar"):
-                    kind = x.get(wq("fldCharType"))
+                xt = x.tag
+                if xt == _W_rPr:                  # read above; matches no branch below
+                    continue
+                if xt == _W_fldChar:
+                    kind = x.get(_W_fldCharType)
                     if kind == "begin":
                         state["field"] = fld = {"instr": "", "phase": "instr", "props": props,
                                                 "result": []}
@@ -162,10 +202,10 @@ def _runs(el, ctx: _Ctx, para_rpr: dict, out: list[Run], state: dict):
                             ctx.raw_len += len(token)
                             state["text_seen"] = True
                         state["field"] = fld = None
-                elif x.tag == wq("instrText"):
+                elif xt == _W_instrText:
                     if fld is not None and fld["phase"] == "instr":
                         fld["instr"] += x.text or ""
-                elif x.tag == wq("t") or x.tag == wq("delText"):
+                elif xt == _W_t or xt == _W_delText:
                     if fld is not None and fld["phase"] == "result" and field_name(fld["instr"]) is not None:
                         if fld["props"] is None:
                             fld["props"] = props
@@ -173,7 +213,7 @@ def _runs(el, ctx: _Ctx, para_rpr: dict, out: list[Run], state: dict):
                         fld["result"].append(x.text or "")
                         continue
                     buf.append(x.text or "")
-                elif x.tag == wq("drawing"):
+                elif xt == _W_drawing:
                     ext = x.find(f".//{_WP}extent")
                     if ext is not None:
                         if buf:
@@ -184,23 +224,23 @@ def _runs(el, ctx: _Ctx, para_rpr: dict, out: list[Run], state: dict):
                         cx, cy = _num(ext.get("cx")), _num(ext.get("cy"))
                         out.append(Run("", RunProps(**{**props.__dict__, "image_w_pt": (cx or 0) / EMU_PER_PT,
                                                        "image_h_pt": (cy or 0) / EMU_PER_PT})))
-                elif x.tag == wq("tab"):
+                elif xt == _W_tab:
                     buf.append("\t")
-                elif x.tag == wq("br"):
-                    if x.get(wq("type")) == "page":
+                elif xt == _W_br:
+                    if x.get(_W_type) == "page":
                         if state["text_seen"] or "".join(buf).strip():
                             ctx.pending_break = True          # applies to the NEXT paragraph
                         else:
                             state["break_before"] = True      # applies to THIS paragraph
                     else:
                         buf.append("\n")
-                elif x.tag == wq("noBreakHyphen"):
+                elif xt == _W_noBreakHyphen:
                     buf.append("-")
-                elif x.tag == wq("sym"):
+                elif xt == _W_sym:
                     buf.append("\ufffd")
-                elif x.tag == wq("cr"):
+                elif xt == _W_cr:
                     buf.append("\n")
-                elif x.tag in (wq("footnoteReference"), wq("endnoteReference")):
+                elif xt in (_W_footnoteReference, _W_endnoteReference):
                     # The mark: no text of its own (the number is drawn, never compared); an empty
                     # run anchors it at this point of the paragraph. w:footnoteRef (the note's own
                     # number inside its body) is not read: the layout draws it from note_numbers.
@@ -209,11 +249,11 @@ def _runs(el, ctx: _Ctx, para_rpr: dict, out: list[Run], state: dict):
                         out.append(Run(flushed, props))
                         ctx.raw_len += len(flushed)
                         buf = []
-                    ref = NoteRef("footnote" if x.tag == wq("footnoteReference") else "endnote",
-                                  int(x.get(wq("id")) or 0))
+                    ref = NoteRef("footnote" if xt == _W_footnoteReference else "endnote",
+                                  int(x.get(_W_id) or 0))
                     ctx.note_numbers.setdefault(ref, 1 + sum(1 for r in ctx.note_numbers if r.kind == ref.kind))
                     out.append(Run("", RunProps(**{**props.__dict__, "note": ref})))
-                elif x.tag == wq("commentReference"):
+                elif xt == _W_commentReference:
                     # The mark: no text of its own. Record the anchor at the current raw offset
                     # (a comment marker never emits a run or text of its own).
                     if buf:
@@ -221,7 +261,7 @@ def _runs(el, ctx: _Ctx, para_rpr: dict, out: list[Run], state: dict):
                         out.append(Run(flushed, props))
                         ctx.raw_len += len(flushed)
                         buf = []
-                    cid = x.get(wq("id"))
+                    cid = x.get(_W_id)
                     if cid is not None:
                         ctx.para_markers.append((cid, "ref", ctx.raw_len))
             text = "".join(buf)
@@ -230,19 +270,19 @@ def _runs(el, ctx: _Ctx, para_rpr: dict, out: list[Run], state: dict):
             if text:
                 out.append(Run(text, props))
             ctx.raw_len += len(text)
-        elif tag == wq("fldSimple") and (fs_name := field_name(child.get(wq("instr")))) is not None:
-            first = child.find(wq("r"))
-            props = _run_props(first.find(wq("rPr")) if first is not None else None, para_rpr, ctx)
-            cached = "".join(t.text or "" for r in child.findall(wq("r")) for t in r.findall(wq("t")))
+        elif tag == _W_fldSimple and (fs_name := field_name(child.get(_W_instr))) is not None:
+            first = child.find(_W_r)
+            props = _run_props(first.find(_W_rPr) if first is not None else None, para_rpr, ctx)
+            cached = "".join(t.text or "" for r in child.findall(_W_r) for t in r.findall(_W_t))
             token = "{" + fs_name + "}"
             out.append(Run(token,
                            RunProps(**{**props.__dict__, "field": fs_name, "field_text": cached})))
             ctx.raw_len += len(token)
             state["text_seen"] = True
-        elif tag in (wq("commentRangeStart"), wq("commentRangeEnd")):
-            cid = child.get(wq("id"))
+        elif tag in (_W_commentRangeStart, _W_commentRangeEnd):
+            cid = child.get(_W_id)
             if cid is not None:
-                which = "start" if tag == wq("commentRangeStart") else "end"
+                which = "start" if tag == _W_commentRangeStart else "end"
                 ctx.para_markers.append((cid, which, ctx.raw_len))
         elif tag in _TRANSPARENT:
             _runs(child, ctx, para_rpr, out, state)
@@ -265,17 +305,16 @@ def _run_props(rpr, para_rpr: dict, ctx: _Ctx) -> RunProps:
 def _paragraph(el, ctx: _Ctx) -> Paragraph:
     ctx.raw_len = 0        # concatenated raw run text length so far (for comment anchor offsets)
     ctx.para_markers = []  # (cid, which, offset) markers collected in _runs, folded in below once p exists
-    ppr = el.find(wq("pPr"))
-    style_id = wval(ppr.find(wq("pStyle"))) if ppr is not None else None
+    ppr = el.find(_W_pPr)
+    style_id = wval(ppr.find(_W_pStyle)) if ppr is not None else None
     # resolved_ppr(None) (no pStyle) resolves through Word's default paragraph style chain,
     # not an empty chain -- see Styles._chain.
-    style_ppr = ctx.styles.resolved_ppr(style_id)
+    style_ppr, para_rpr = ctx.resolved(style_id)
     own = read_ppr(ppr)
     merged = dict(style_ppr)
     merged.update(own)
-    para_rpr = ctx.styles.resolved_rpr(style_id)
     mark = dict(para_rpr)
-    mark.update(read_rpr(ppr.find(wq("rPr"))) if ppr is not None else {})   # the paragraph mark's own run properties
+    mark.update(read_rpr(ppr.find(_W_rPr)) if ppr is not None else {})   # the paragraph mark's own run properties
 
     # ---- Numbering: paragraph's own numPr, else the style chain's own numPr (already folded
     # into `merged` above), else a level that names this style via its own <w:pStyle>.
@@ -394,7 +433,7 @@ def _paragraph(el, ctx: _Ctx) -> Paragraph:
         # break (if any) set during _runs, correctly destined for the NEXT paragraph.
 
     if ppr is not None:
-        sp = ppr.find(wq("sectPr"))
+        sp = ppr.find(_W_sectPr)
         if sp is not None and not ctx.in_part:
             p.props.section_break = True
             section = _section(sp, ctx)

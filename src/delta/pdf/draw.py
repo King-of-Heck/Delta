@@ -17,7 +17,8 @@ from .report import GAP, ReportInfo, draw_report, report_height
 
 BLACK = "000000"
 
-TINT = 0.15            # how much of the category colour shows in a side pane's tint box
+_NO_EFFECTS = frozenset()
+TINT = 0.15           # how much of the category colour shows in a side pane's tint box
 
 
 def tint(color: str) -> str:
@@ -58,7 +59,8 @@ def run_style(g: GlyphRun, face: FontRef, rs: RenderSet, plain: bool = False) ->
     layout) ignores the category: the run's own colour and underline only."""
     style = None if plain else rs.category(g.mode, g.fmt)
     color = style.color if style else (g.color or BLACK)
-    eff = run_effects(style.effects if style else (), g.underline)
+    # most runs are plain text: no category and no underline have no effects (run_effects((), False))
+    eff = run_effects(style.effects if style else (), g.underline) if style or g.underline else _NO_EFFECTS
     return (color, eff, (face.synthetic and face.bold) or "bold" in eff,
             (face.synthetic and face.italic) or "italic" in eff)
 
@@ -76,8 +78,9 @@ def draw_runs(line: PlacedLine, runs: list[GlyphRun], fonts: dict[str, FontRef],
         baseline = line.baseline - g.rise           # a reference mark sits above the baseline
         if g.text.strip():
             painter.text(g.x, baseline, g.text, face, g.size, color, fake_bold, fake_italic, width=g.w)
-        for x1, x2, y, t, dotted in decorations(eff, g.x, g.x + g.w, baseline, g.size):
-            painter.rule(x1, x2, y, t, color, dotted)
+        if eff:                                     # no effects draw no rules
+            for x1, x2, y, t, dotted in decorations(eff, g.x, g.x + g.w, baseline, g.size):
+                painter.rule(x1, x2, y, t, color, dotted)
 
 
 BAR_WIDTH = 1.5

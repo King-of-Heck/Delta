@@ -24,6 +24,10 @@ from .pieces import Piece
 
 _TOKEN = re.compile(f"[^{WS_CHARS}]+|[{WS_CHARS}]+")
 _WS = re.compile(f"^[{WS_CHARS}]+$")
+# WS_CHARS spelled out (its one range expanded), for the plain string tests of Run.is_space
+_WS_STR = ("\t\n\v\f\r   " + "".join(map(chr, range(0x2000, 0x200b)))
+           + "    　﻿")
+_WS_SET = frozenset(_WS_STR)
 
 
 LEADERS = {"dot": ".", "hyphen": "-", "underscore": "_", "middleDot": "\u00b7", "heavy": "_"}
@@ -47,7 +51,10 @@ class Run:
 
     @property
     def is_space(self) -> bool:
-        return not self.tab and bool(_WS.match(self.text))
+        # == bool(_WS.match(text)): non-empty and whitespace throughout. A word fails on its first
+        # character, which is most runs, so that is tested before the whole text is.
+        t = self.text
+        return not self.tab and t != "" and t[0] in _WS_SET and not t.strip(_WS_STR)
 
 
 def next_tab_stop(x: float, tab: float) -> float:
@@ -121,8 +128,17 @@ def _following_width(runs: list[Run], i: int, kind: str) -> float:
 def line_height(runs: list[Run], spacing: Spacing, default_face, default_size: float) -> tuple[float, float]:
     chars = [r for r in runs if not r.tab]     # a tab's own formatting does not size the line (Word)
     if chars:
-        natural = max(r.face.line_height(r.size) for r in chars)
-        desc = max(r.face.descent(r.size) for r in chars)
+        # both maxima in one pass; `>` keeps the first of equals, as max() does
+        natural = desc = None
+        for r in chars:
+            lh, d = r.face.line_height(r.size), r.face.descent(r.size)
+            if natural is None:
+                natural, desc = lh, d
+                continue
+            if lh > natural:
+                natural = lh
+            if d > desc:
+                desc = d
     else:
         natural = default_face.line_height(default_size)
         desc = default_face.descent(default_size)

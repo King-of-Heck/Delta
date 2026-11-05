@@ -7,6 +7,23 @@ from ..model import Border, TabStop, merge_tabs
 from .ns import wq, wval, wbool, half_pt, twips_to_pt, _num
 
 _TAB_KINDS = {"start": "left", "end": "right"}
+# Clark names built once: these are looked up for every run and paragraph of a document.
+_B, _I, _U, _CAPS, _SMALL_CAPS, _RFONTS, _SZ, _COLOR, _ASCII = (
+    wq(t) for t in ("b", "i", "u", "caps", "smallCaps", "rFonts", "sz", "color", "ascii"))
+_RPR_TAGS = frozenset((_B, _I, _U, _CAPS, _SMALL_CAPS, _RFONTS, _SZ, _COLOR))
+_PPR_TAGS = frozenset(wq(t) for t in ("jc", "ind", "spacing", "keepNext", "keepLines", "contextualSpacing",
+                                      "pageBreakBefore", "outlineLvl", "tabs", "pBdr", "numPr"))
+
+
+def _first_children(el, tags: frozenset) -> dict:
+    """tag -> the first direct child with that tag, for the tags asked for: one pass over the
+    children instead of one find() per property (the same element find() returns)."""
+    out: dict = {}
+    for ch in el:
+        t = ch.tag
+        if t in tags and t not in out:
+            out[t] = ch
+    return out
 
 
 def read_rpr(rpr) -> dict:
@@ -14,26 +31,30 @@ def read_rpr(rpr) -> dict:
     out: dict = {}
     if rpr is None:
         return out
-    b = rpr.find(wq("b"))
+    kids = _first_children(rpr, _RPR_TAGS)
+    if not kids:
+        return out
+    get = kids.get
+    b = get(_B)
     if b is not None:
         out["bold"] = wbool(b)
-    i = rpr.find(wq("i"))
+    i = get(_I)
     if i is not None:
         out["italic"] = wbool(i)
-    u = rpr.find(wq("u"))
+    u = get(_U)
     if u is not None:
         out["underline"] = wval(u, "single") != "none"
-    for tag, key in (("caps", "caps"), ("smallCaps", "small_caps")):
-        el = rpr.find(wq(tag))
+    for tag, key in ((_CAPS, "caps"), (_SMALL_CAPS, "small_caps")):
+        el = get(tag)
         if el is not None:
             out[key] = wbool(el)
-    fonts = rpr.find(wq("rFonts"))
-    if fonts is not None and fonts.get(wq("ascii")):
-        out["font"] = fonts.get(wq("ascii"))
-    sz = rpr.find(wq("sz"))
+    fonts = get(_RFONTS)
+    if fonts is not None and fonts.get(_ASCII):
+        out["font"] = fonts.get(_ASCII)
+    sz = get(_SZ)
     if sz is not None and half_pt(wval(sz)) is not None:
         out["size_pt"] = half_pt(wval(sz))
-    color = rpr.find(wq("color"))
+    color = get(_COLOR)
     if color is not None:
         v = wval(color)
         out["color"] = None if v is None or v.lower() == "auto" else v.lower()
@@ -45,11 +66,14 @@ def read_ppr(ppr) -> dict:
     out: dict = {}
     if ppr is None:
         return out
-    jc = ppr.find(wq("jc"))
+    kids = _first_children(ppr, _PPR_TAGS)
+    if not kids:
+        return out
+    jc = kids.get(wq("jc"))
     if jc is not None:
         v = wval(jc, "left")
         out["align"] = {"both": "justify", "start": "left", "end": "right"}.get(v, v)
-    ind = ppr.find(wq("ind"))
+    ind = kids.get(wq("ind"))
     if ind is not None:
         for attr, key in (("left", "ind_left_pt"), ("start", "ind_left_pt"),
                           ("right", "ind_right_pt"), ("end", "ind_right_pt"),
@@ -57,7 +81,7 @@ def read_ppr(ppr) -> dict:
             v = twips_to_pt(ind.get(wq(attr)))
             if v is not None:
                 out[key] = v
-    sp = ppr.find(wq("spacing"))
+    sp = kids.get(wq("spacing"))
     if sp is not None:
         before, after = twips_to_pt(sp.get(wq("before"))), twips_to_pt(sp.get(wq("after")))
         if before is not None:
@@ -82,13 +106,13 @@ def read_ppr(ppr) -> dict:
                     out["line_exact_pt"] = n / 20.0
     for tag, key in (("keepNext", "keep_next"), ("keepLines", "keep_lines"),
                      ("contextualSpacing", "contextual_spacing"), ("pageBreakBefore", "page_break_before")):
-        el = ppr.find(wq(tag))
+        el = kids.get(wq(tag))
         if el is not None:
             out[key] = wbool(el)
-    ol = ppr.find(wq("outlineLvl"))
+    ol = kids.get(wq("outlineLvl"))
     if ol is not None and wval(ol) is not None:
         out["outline_level"] = int(wval(ol))
-    tabs = ppr.find(wq("tabs"))
+    tabs = kids.get(wq("tabs"))
     if tabs is not None:
         stops = []
         for t in tabs.findall(wq("tab")):
@@ -98,7 +122,7 @@ def read_ppr(ppr) -> dict:
             kind = wval(t, "left") or "left"
             stops.append(TabStop(pos, _TAB_KINDS.get(kind, kind), t.get(wq("leader")) or "none"))
         out["tabs"] = tuple(stops)
-    bdr = ppr.find(wq("pBdr"))
+    bdr = kids.get(wq("pBdr"))
     if bdr is not None:
         for side in ("top", "bottom", "left", "right"):
             el = bdr.find(wq(side))
@@ -112,7 +136,7 @@ def read_ppr(ppr) -> dict:
             color = (el.get(wq("color")) or "auto").lower()
             out[f"border_{side}"] = Border(sz / 8.0, _num(el.get(wq("space"))) or 0.0,
                                            None if color == "auto" else color)
-    numpr = ppr.find(wq("numPr"))
+    numpr = kids.get(wq("numPr"))
     if numpr is not None:
         nid, il = numpr.find(wq("numId")), numpr.find(wq("ilvl"))
         if nid is not None and wval(nid) is not None:
