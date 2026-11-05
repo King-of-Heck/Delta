@@ -1,6 +1,6 @@
 # Delta changelog
 
-## v2.12.6 — Delta keeps running while its window is open (2026-11-04)
+## Unreleased — Delta keeps running while its window is open
 
 - Delta no longer stops while its window is minimized, covered or behind a locked screen. Before,
   it could stop after about a minute and a half in the background, and coming back showed "Delta
