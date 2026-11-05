@@ -19,13 +19,18 @@ for _ in range(3):
 # One token, after the whitespace pypdf skips both at the top level and inside an array or a
 # dictionary (NUL and vertical tab are skipped by only one of the two: those are `other` tokens).
 # Every group matches at least one byte, so a findall row has exactly one non-empty field.
+# A "(" that is not a whole string here is pypdf's to read, so it takes the rest of the stream with
+# it: findall stops there, rather than read on and try each later "(" again to the end of the stream
+# (time growing with the square of its length when many are left open).
 _TOKEN = re.compile(rb"""[\t\n\f\r ]*(?:
     ([0-9+\-.][0-9+,\-.]*)                       # a number, as pypdf reads one: + , - . and digits
   | (/[^\s()<>\[\]{}/%]*)                        # a name
   | ([A-Za-z'"][^\s()<>\[\]{}/%]*)               # an operator (or true/false/null)
   | (""" + _NEST + rb""")                         # a literal string
-  | (<<|>>|\[|\]|<[^<>]*>|%[^\r\n]*[\r\n]?|[^\t\n\f\r ])   # punctuation, a hex string, a comment, other
+  | (<<|>>|\[|\]|<[^<>]*>|%[^\r\n]*[\r\n]?       # punctuation, a hex string, a comment,
+     |\(.*|[^\t\n\f\r ])                         # a "(" left open and all after it, other
 )""", re.X | re.S)
+_SPACE = b"\t\n\f\r "
 _SPECIAL = re.compile(rb"[()\\]")
 _HEX_DIGITS = re.compile(rb"[0-9A-Fa-f]*")
 # An indirect reference ("1 0 R"), which pypdf cannot read in a content stream; where it might be
@@ -147,7 +152,10 @@ def _parse(data: bytes) -> list:
     want_key = False                 # in a dictionary: the next token is a key
     has_dict = False                 # the pending operands include a dictionary
     known: dict = {}                 # number and string tokens -> their values; they recur all through a page
-    for num, name, op, lit, punct in _TOKEN.findall(data):
+    # Whitespace at the very end holds no token, and left in, the search would fail at each byte of
+    # it in turn (time growing with the square of its length).
+    end = len(data.rstrip(_SPACE))
+    for num, name, op, lit, punct in _TOKEN.findall(data, 0, end):
         if num:
             value = known.get(num)
             if value is None:
@@ -224,7 +232,7 @@ def _parse(data: bytes) -> list:
                     raise _Unsure        # one left open at the end: pypdf raises inside an array
                 continue
             else:
-                raise _Unsure
+                raise _Unsure            # a "(" left open (and the rest), or any other byte
         if in_dict:
             if want_key:
                 raise _Unsure            # a dictionary key that is not a name

@@ -1,6 +1,7 @@
 """The fast content-stream reader against pypdf's own parser: on every stream it takes, it must give
 exactly what pypdf gives (types included: 1 is not 1.0), and on the rest it must step aside."""
 import random
+import time
 
 import pytest
 
@@ -74,6 +75,11 @@ TAKEN = [
     b"q 1 0 0 1 0 0 cm /Im1 Do Q",
     b"BT\x00(a) Tj",                         # NUL is part of an operator, as in pypdf
     b"ID EI",
+    b"BT (a) Tj ET \t\f\r\n \r\n",               # whitespace at the end
+    b"(a) Tj % last comment\r\n  \n",
+    b"(a) Tj %last\r \n",
+    b"% only a comment \r\n\t ",
+    b" \r\n\t\f ",
 ]
 
 
@@ -114,12 +120,37 @@ LEFT_TO_PYPDF = [
     b"T" + b"x" * 200,
     b"/" + b"n" * 5000 + b" 1 Tf",
     b", Tc",
+    b"[(a) % comment\r\n  ",                     # an array left open, a comment and whitespace last
+    b"(a) Tj (open \\( (b) Tj (c) Tj",           # a string left open, whole strings after it
+    b"<41 (a) Tj <42> Tj",                       # a "<" with no ">" before the next "<"
+    b"(a) Tj @ (b) Tj",                          # a stray byte, then good tokens
 ]
 
 
 @pytest.mark.parametrize("data", LEFT_TO_PYPDF)
 def test_streams_it_is_unsure_of_are_left_to_pypdf(data):
     assert tokens.parse(data) is None
+
+
+# Streams the reader once took time over that grew with the square of their length (many seconds
+# each); read in one pass, each takes a few milliseconds. -> (stream, taken by the fast reader)
+LONG_RUNS = {
+    "a string left open again and again": (b"BT (Hi) Tj ET\n" + b"\\(" * 32000, False),
+    "an inline image of escaped parens": (b"BI /W 128 /H 128 /BPC 8 /CS /G ID " + b"\\(" * 8192
+                                          + b" EI\n" + b"BT (Line of text) Tj ET\n" * 2000, False),
+    "trailing spaces": (b"BT (a) Tj ET" + b" " * 30000, True),
+    "trailing line ends": (b"BT (a) Tj ET" + b"\r\n" * 15000, True),
+}
+
+
+@pytest.mark.parametrize("data, taken", LONG_RUNS.values(), ids=LONG_RUNS.keys())
+def test_long_runs_are_read_in_one_pass(data, taken):
+    start = time.perf_counter()
+    ops = tokens.parse(data)
+    assert time.perf_counter() - start < 1.0
+    assert (ops is not None) == taken
+    if taken:
+        assert agrees(data)
 
 
 ALPHABET = [
