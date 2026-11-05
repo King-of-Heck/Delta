@@ -800,5 +800,6 @@ def test_text_compare_drops_stale_answers_and_keeps_text_drops():
     assert "seq !==" in js or "!== seq" in js              # an answer older than the newest is dropped
     assert "stopPropagation" in js                          # a text drag into a box is not a file drop
     assert "ClipboardItem" in js and "text/html" in js and "text/plain" in js
-    assert 'classList.contains("compact")' in js and js.index("compact()") < js.index("setTimeout(kick")  # no hidden compares
+    assert 'classList.contains("compact")' in js                                  # no hidden compares:
+    assert _function_body(js, "schedule").split("{", 1)[1].lstrip().startswith("if (compact()) return;")
     assert "inflight" in js and "dirty" in js                # one request in flight, one catch-up

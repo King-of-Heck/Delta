@@ -1,7 +1,7 @@
 // The pasted-text compare on the start screen: two boxes compared live (a pause after typing, then
 // /api/text), the redline under them with its count line and a Copy redline button. Start screen
-// only: once a document compare is loaded the sources go compact and CSS hides this. At most one request is out; an answer
-// for text that has since changed is dropped. Nothing here is saved.
+// only: once a document compare is loaded the sources go compact and CSS hides this. At most one
+// request is out; an answer for text that has since changed is dropped. Nothing here is saved.
 import { api } from "./app.js";
 import { countLine, delayFor, redlineHtml, redlineText, tooLong } from "./textredline.js";
 
@@ -37,6 +37,7 @@ function compact() {
 function schedule() {
   if (compact()) return;
   clearTimeout(timer);
+  dirty = false;                             // the timer set below carries the latest text
   ++seq;                                     // an answer for the text as it was is now stale
   const a = $("textA").value, b = $("textB").value;
   if (!a.trim() && !b.trim()) {
