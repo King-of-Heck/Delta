@@ -72,7 +72,7 @@ def test_the_ping_carries_the_page_visibility():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
-@pytest.mark.parametrize("script", ["app.js", "changes.js", "sources.js", "strip.js", "copy.js", "panes.js", "sync.js", "sides.js", "rowtext.js", "textredline.js"])
+@pytest.mark.parametrize("script", ["app.js", "changes.js", "sources.js", "strip.js", "copy.js", "panes.js", "sync.js", "sides.js", "rowtext.js", "textredline.js", "textcompare.js"])
 def test_scripts_parse(script):
     path = VIEWER.joinpath(script)
     r = subprocess.run([shutil.which("node"), "--check", str(path)], capture_output=True, text=True)
@@ -781,3 +781,22 @@ def test_text_cap_is_the_same_in_the_viewer_and_the_server():
     m = re.search(r"export const TEXT_MAX_BYTES = (\d+) \* (\d+);", _read("textredline.js"))
     assert int(m.group(1)) * int(m.group(2)) == TEXT_MAX_BYTES
     assert "textredline.js" in STATIC and "textcompare.js" in STATIC
+
+
+def test_the_paste_boxes_sit_under_compare_on_the_start_screen():
+    html = _read("index.html")
+    for id_ in ("paste", "textA", "textB", "textSwap", "textResult", "textCount", "textCopy", "textRedline"):
+        assert f'id="{id_}"' in html, id_
+    src = html[html.index('id="sources"'):html.index("</section>", html.index('id="sources"'))]
+    assert src.index('id="compare"') < src.index('id="paste"') < src.index('class="hint"')
+    assert "initTextCompare()" in _function_body(_read("app.js"), "wire")
+    css = _read("style.css")
+    assert "#bar .sources.compact .paste" in css          # hidden once a document compare is loaded
+
+
+def test_text_compare_drops_stale_answers_and_keeps_text_drops():
+    js = _read("textcompare.js")
+    assert "/api/text" in js and "optIgnoreCase" in js
+    assert "seq !==" in js or "!== seq" in js              # an answer older than the newest is dropped
+    assert "stopPropagation" in js                          # a text drag into a box is not a file drop
+    assert "ClipboardItem" in js and "text/html" in js and "text/plain" in js

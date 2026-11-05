@@ -6,6 +6,7 @@
 // in changes.js and listens for the events dispatched here.
 import { initChanges } from "./changes.js";
 import { initSources, refreshSources } from "./sources.js";
+import { initTextCompare } from "./textcompare.js";
 import { initStrip } from "./strip.js";
 import { SIDE_ORDER, buildPages, initPanes, leadPane, paneOf, renderPanes, requestedSides, resetPanes, visiblePanes } from "./panes.js";
 import { initSync, refreshSync } from "./sync.js";
@@ -451,6 +452,7 @@ function carryOldSettings() {
 function wire() {
   carryOldSettings();
   initSources({ compare: compareNow, swap: compareNow });   // the slots are already exchanged when swap fires
+  initTextCompare();
   for (const id of OPTION_IDS) $(id).addEventListener("change", relayout);
   $("renderSet").addEventListener("change", (e) => { state.renderSet = e.target.value; restyle(); });
   $("changeBars").addEventListener("change", (e) => { state.changeBars = e.target.checked; restyle(); });
