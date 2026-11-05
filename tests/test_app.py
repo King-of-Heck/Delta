@@ -868,3 +868,42 @@ def test_compare_payload_carries_tracked(srv):
     status, d = _json(srv.url + "api/compare", "POST", _compare_body(a="<w:p>" + INS_RUN + "</w:p>", b=P("new")))
     assert status == 200 and d["tracked"] == {"original": 1, "modified": 0}
     assert _json(srv.url + "api/state")[1]["tracked"] == {"original": 1, "modified": 0}
+
+
+def test_text_compares_two_pastes_without_touching_the_session(srv):
+    status, d = _json(srv.url + "api/text", "POST", {"a": "The fee is 10 days.", "b": "The fee is 30 days."})
+    assert status == 200 and d["summary"]["total"] == 2
+    assert [s["m"] for s in d["rows"][0]["segments"]] == ["eq", "del", "ins", "eq"]
+    assert _json(srv.url + "api/state")[1]["loaded"] is False
+
+
+def test_text_leaves_a_loaded_comparison_alone(srv):
+    assert _json(srv.url + "api/compare", "POST", _compare_body())[0] == 200
+    before = srv.session.cmp
+    assert _json(srv.url + "api/text", "POST", {"a": "x", "b": "y"})[0] == 200
+    assert srv.session.cmp is before and _json(srv.url + "api/state")[1]["loaded"] is True
+
+
+def test_text_honours_ignore_case(srv):
+    body = {"a": "Hello World", "b": "hello world"}
+    assert _json(srv.url + "api/text", "POST", body)[1]["summary"]["total"] > 0
+    assert _json(srv.url + "api/text", "POST", {**body, "options": {"ignore_case": True}})[1]["summary"]["total"] == 0
+
+
+def test_text_refuses_bad_input(srv):
+    assert _json(srv.url + "api/text", "POST", {"a": "x"}) == (400, {"error": "a and b must be text"})
+    assert _json(srv.url + "api/text", "POST", {"a": 1, "b": "y"})[0] == 400
+    assert _json(srv.url + "api/text", "POST", {"a": "x", "b": "y", "options": {"nope": True}})[0] == 400
+    assert _json(srv.url + "api/text")[0] == 405
+
+
+def test_text_refuses_too_much(srv):
+    from delta.textread import TEXT_MAX_BYTES
+    status, d = _json(srv.url + "api/text", "POST", {"a": "x" * (TEXT_MAX_BYTES + 1), "b": ""})
+    assert status == 413 and d == {"error": f"too much text to compare (over {TEXT_MAX_BYTES} bytes on one side)"}
+    assert _json(srv.url + "api/text", "POST", {"a": "é" * (TEXT_MAX_BYTES // 2 + 1), "b": ""})[0] == 413
+
+
+def test_text_is_refused_cross_origin(srv):
+    assert _post_with_headers(srv.url + "api/text", {"Origin": "http://evil.example"}) == \
+        (403, {"error": "cross-origin request refused"})

@@ -26,6 +26,10 @@ read: a loopback server is reachable from every page the browser has open.
                               "pages" null) or a PDF's page count ("tracked" null, its text not read
                               here); "saved" is when it was last saved (ISO 8601 UTC) or null;
                               touches no session state
+  POST /api/text              {"a": str, "b": str, "options"?: {"ignore_case"}} -> {"summary", "rows":
+                              [{"type", "segments": [{"m": "eq"|"ins"|"del", "t"}]}]}: two pasted texts,
+                              one paragraph per non-blank line, compared by the same engine (numbering
+                              never counted); 413 over 204800 bytes a side; touches no session state
   GET  /api/progress          {} when idle, else {"name", "page", "pages"}: how far the PDF being
                               read by a compare in flight has got (two PDFs read at once: both names,
                               pages summed); never takes the session lock

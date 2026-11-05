@@ -22,6 +22,7 @@ from ..docx.revisions import count_revisions
 from ..reader import kind_of
 from .session import BadRequest, NoComparison, Session, check_render, parse_options, parse_sides
 from .launch import open_viewer
+from ..textread import TEXT_MAX_BYTES, compare_texts
 from ..worker import Worker
 
 STATIC = {"index.html": "text/html; charset=utf-8", "style.css": "text/css; charset=utf-8",
@@ -167,7 +168,7 @@ class Handler(BaseHTTPRequestHandler):
                 remaining = int(raw) if raw is not None else 0
             except ValueError:
                 remaining = -1
-            if 0 <= remaining <= DRAIN_CAP:
+            if not self._consumed and 0 <= remaining <= DRAIN_CAP:   # /api/text's 413 comes after its body was read
                 try:
                     while remaining > 0:
                         chunk = self.rfile.read(min(remaining, 1 << 20))
@@ -269,7 +270,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise _Bad(404, "not found")
             route = path[len("/api/"):]
             allowed = {"state": "GET", "pages": "GET", "pdf": "GET", "compare": "POST", "layout": "POST",
-                       "inspect": "POST", "progress": "GET", "ping": "POST", "quit": "POST"}.get(route)
+                       "inspect": "POST", "text": "POST", "progress": "GET", "ping": "POST", "quit": "POST"}.get(route)
             if allowed is None:
                 raise _Bad(404, "not found")
             if allowed != method:
@@ -354,6 +355,18 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             raise _Bad(400, f"{name}: not a Word document ({type(e).__name__})") from None
         self._json({"name": name, "kind": "docx", "tracked": tracked, "pages": None, "saved": _iso(saved)})
+
+    def _api_text(self, session, query):
+        """Two pasted texts compared at once: rows and counts only, no layout. Touches no session
+        state and never takes the session lock, so a live text compare cannot stall a document one."""
+        body = self._body()
+        a, b = body.get("a"), body.get("b")
+        if not isinstance(a, str) or not isinstance(b, str):
+            raise _Bad(400, "a and b must be text")
+        if max(len(a.encode("utf-8")), len(b.encode("utf-8"))) > TEXT_MAX_BYTES:
+            raise _Bad(413, f"too much text to compare (over {TEXT_MAX_BYTES} bytes on one side)")
+        options = parse_options(body.get("options", {}))
+        self._json(compare_texts(a, b, ignore_case=options.ignore_case))
 
     def _api_progress(self, session, query):
         """How far the PDF being read has got. Deliberately NOT under the session lock: the
