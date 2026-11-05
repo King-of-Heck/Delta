@@ -7,6 +7,7 @@ import os
 import threading
 import time
 from collections import OrderedDict
+from concurrent.futures import wait as futures_wait
 from time import perf_counter
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
@@ -26,6 +27,7 @@ from ..pdf.writer import REPORTS, render
 from ..pdfread.types import PdfRefused
 from ..reader import UnknownKind, documents, kind_of, read_source
 from ..viewer.svg import render_pages
+from ..worker import Unavailable
 
 OPTION_KEYS = ("ignore_case", "count_numbering", "show_equal", "show_insertions", "show_deletions",
                "show_formatting")
@@ -80,9 +82,11 @@ def check_render(render_set: str, report: str | None = None) -> None:
         raise BadRequest(f"unknown report placement {report!r}; expected first, last or none")
 
 
-def _parse(name: str, data: bytes, progress=None):
+def _parse(name: str, data: bytes, progress=None, read=None):
+    """`read(data, progress)` with its failure named for the file: the reader here, or the
+    worker's result for a file it read."""
     try:
-        return read_source(data, progress)
+        return (read or read_source)(data, progress)
     except (PdfRefused, UnknownKind) as e:
         raise BadDocument(f"{name}: {e}") from e
     except Exception as e:
@@ -174,7 +178,7 @@ def parse_sides(value) -> list[str]:
 
 
 class Session:
-    def __init__(self, fonts=None, clock=None, log=None):
+    def __init__(self, fonts=None, clock=None, log=None, worker=None):
         self.fonts = fonts                      # a FontResolver / FakeResolver; None = system fonts, resolved once
         self._clock = clock or datetime.now
         self._log = log                         # a callable taking one ASCII line (the timing line), or None
@@ -195,6 +199,7 @@ class Session:
         self.timings: list[tuple[str, float]] = []   # (stage, seconds) since begin(): the timing line
         self._parsed: OrderedDict[str, object] = OrderedDict()   # sha256 of the bytes -> read_source's result
         self.progress: dict | None = None      # {"name", "page", "pages"} while a PDF is read; read WITHOUT the lock
+        self.worker = worker                    # a delta.worker.Worker reading one PDF of a pair, or None
 
     @property
     def loaded(self) -> bool:
@@ -218,6 +223,10 @@ class Session:
         pages = self.layout.page_count if self.layout is not None else 0
         total = sum(secs for _stage, secs in self.timings)
         return " ".join(["timing", what, f"pages={pages}", *parts, f"total={total:.3f}"])
+
+    def _log_line(self, line: str) -> None:
+        if self._log is not None:
+            self._log(line)
 
     def log_timings(self, what: str) -> str:
         """Emit the timing line of the call just made (to the log sink, when there is one)."""
@@ -255,11 +264,52 @@ class Session:
 
         def tick(done: int, total: int) -> None:
             self.progress = {"name": name, "page": done, "pages": total}
-        doc = _parse(name, data, tick)
+        return self._keep(key, _parse(name, data, tick))
+
+    def _keep(self, key: str, doc):
         self._parsed[key] = doc
         while len(self._parsed) > PARSE_CACHE:
             self._parsed.popitem(last=False)
         return doc
+
+    def _read_pair(self, a_name: str, a_bytes: bytes, b_name: str, b_bytes: bytes):
+        """Both files read, two PDFs read at once when the worker can take the Modified one: the
+        same results, cached the same way, and the same error first (the Original's)."""
+        ka, kb = hashlib.sha256(a_bytes).hexdigest(), hashlib.sha256(b_bytes).hexdigest()
+        ticket = None
+        if (self.worker is not None and ka != kb and ka not in self._parsed and kb not in self._parsed
+                and kind_of(a_bytes) == "pdf" and kind_of(b_bytes) == "pdf"):
+            ticket = self.worker.submit(b_bytes)
+        if ticket is None:
+            return self._read(a_name, a_bytes), self._read(b_name, b_bytes)
+        both = f"{a_name} and {b_name}"
+        seen = [0, 0]
+
+        def tick(done: int, total: int) -> None:
+            seen[:] = done, total
+            other = self.worker.progress(ticket)
+            if other is None:
+                self.progress = {"name": a_name, "page": done, "pages": total}
+            else:
+                self.progress = {"name": both, "page": done + other[0], "pages": total + other[1]}
+        try:
+            a = self._keep(ka, _parse(a_name, a_bytes, tick))
+        except BaseException:
+            ticket[1].cancel()
+            raise
+        while not ticket[1].done():             # the Original is read; the Modified is still going
+            other = self.worker.progress(ticket)
+            if other is not None:
+                self.progress = {"name": both, "page": seen[0] + other[0], "pages": seen[1] + other[1]}
+            futures_wait([ticket[1]], timeout=0.25)
+        try:
+            b = _parse(b_name, b_bytes, read=lambda _data, _progress: self.worker.read(ticket))
+        except BadDocument as e:
+            if not isinstance(e.__cause__, Unavailable):
+                raise
+            self._log_line(f"worker not used: {e.__cause__}")
+            return a, self._read(b_name, b_bytes)
+        return a, self._keep(kb, b)
 
     def load(self, a_name: str, a_bytes: bytes, b_name: str, b_bytes: bytes,
              options: Options | None = None) -> None:
@@ -274,7 +324,7 @@ class Session:
             raise BadDocument(MIXED)
         t0 = perf_counter()
         try:
-            a, b = self._read(a_name, a_bytes), self._read(b_name, b_bytes)
+            a, b = self._read_pair(a_name, a_bytes, b_name, b_bytes)
         finally:
             self.progress = None
         if a.source_kind != b.source_kind:

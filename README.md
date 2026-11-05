@@ -145,8 +145,10 @@ approximate and comes with limits worth knowing before relying on it:
 - The redline itself is re-laid-out text: fonts, spacing and page breaks are approximate, and the
   pages do not look like the source PDFs.
 
-Reading a long PDF shows its progress page by page. Documents never leave the machine, the same
-as for `.docx`.
+Reading a long PDF shows its progress page by page. The two PDFs of a pair are read at the same time,
+the second by a helper process that Delta starts from its own Python and stops when it closes (when
+no such process can be started, they are read one after the other). Documents never leave the
+machine, the same as for `.docx`.
 
 ## Viewer
 

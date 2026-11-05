@@ -229,13 +229,18 @@ def _fake_stage(tmp_path):
     return stage
 
 
-def _fake_run(serve_writes_log):
+def _fake_run(serve_writes_log, worker="worker ok"):
     """A stand-in for _run that answers the smoke's commands: the version, the imports, the sys.path
-    check, the pdf (a %PDF file), the pdf compare (itself, total 0) and the serve (the url line, and
-    the log only when asked)."""
+    check, the worker check (its file says `worker`, or is not written when that is None), the pdf
+    (a %PDF file), the pdf compare (itself, total 0) and the serve (the url line, and the log only
+    when asked)."""
     def run(cmd, cwd, timeout=300):
         if cmd[1:] == ["-m", "delta", "version"]:
             return "delta 9.9.9\n"
+        if cmd[1] == "-c" and cmd[2] == br.WORKER_SMOKE:
+            if worker is not None:
+                Path(cmd[-1]).write_text(worker, encoding="utf-8")
+            return ""
         if cmd[1] == "-c":
             return ""
         if cmd[1:4] == ["-m", "delta", "pdf"]:
@@ -273,6 +278,14 @@ def test_the_serve_smoke_ignores_a_log_left_by_an_earlier_build(tmp_path, monkey
     (work / "delta.log").write_text('--- stale\n{"url": "http://127.0.0.1:5/"}\n', encoding="utf-8")
     monkeypatch.setattr(br, "_run", _fake_run(serve_writes_log=False))
     with pytest.raises(RuntimeError, match="log smoke"):
+        br.smoke(stage, "9.9.9")
+
+
+@pytest.mark.parametrize("worker, says", [(None, "nothing written"), ("worker broken: OSError: blocked", "worker broken")])
+def test_the_smoke_fails_when_the_worker_process_does_not_read(tmp_path, monkeypatch, worker, says):
+    stage = _fake_stage(tmp_path)
+    monkeypatch.setattr(br, "_run", _fake_run(serve_writes_log=True, worker=worker))
+    with pytest.raises(RuntimeError, match=f"worker smoke under python.exe: {says}"):
         br.smoke(stage, "9.9.9")
 
 

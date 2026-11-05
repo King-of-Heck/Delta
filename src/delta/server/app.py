@@ -22,6 +22,7 @@ from ..docx.revisions import count_revisions
 from ..reader import kind_of
 from .session import BadRequest, NoComparison, Session, check_render, parse_options, parse_sides
 from .launch import open_viewer
+from ..worker import Worker
 
 STATIC = {"index.html": "text/html; charset=utf-8", "style.css": "text/css; charset=utf-8",
           "app.js": "text/javascript; charset=utf-8", "changes.js": "text/javascript; charset=utf-8",
@@ -337,6 +338,8 @@ class Handler(BaseHTTPRequestHandler):
             raise _Bad(400, "a file (name, data) is required")
         name, data = _file({"file": body}, "file")
         if kind_of(data) == "pdf":
+            if session.worker is not None:      # a PDF pair is likely next: have the worker ready for it
+                threading.Thread(target=session.worker.warm, daemon=True).start()
             from ..pdfread.extract import page_count_and_date
             from ..pdfread.types import PdfRefused
             try:
@@ -474,7 +477,7 @@ def serve(port: int = 0, open_browser: bool = True, idle: float = DEFAULT_IDLE, 
           verbose: bool = False, fonts=None, ready=None, log=None) -> None:
     """`log`, when given, takes the one-line timing report of every compare / layout / pages call."""
     logging.getLogger("fontTools").setLevel(logging.ERROR)     # "'created' timestamp seems very low"
-    session = Session(fonts=fonts, log=log)
+    session = Session(fonts=fonts, log=log, worker=Worker())
     server = make_server(session, port=port, verbose=verbose)
     server.log = log
     url = url_of(server)
@@ -486,3 +489,5 @@ def serve(port: int = 0, open_browser: bool = True, idle: float = DEFAULT_IDLE, 
         run(server, idle, grace)
     except KeyboardInterrupt:
         pass                # Ctrl+C in a console is a quit, not a crash; run() still closes
+    finally:
+        session.worker.close()

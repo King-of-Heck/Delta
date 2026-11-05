@@ -29,7 +29,7 @@ from .pdf.rendersets import RENDER_SETS
 from .pdf.report import report_info
 from .pdf.writer import REPORTS, render
 from .pdfread.types import PdfRefused
-from .reader import documents, read_source
+from .reader import documents, kind_of, read_source
 from .server import previous
 from .server.app import DEFAULT_GRACE, DEFAULT_IDLE, serve
 from .server.shortcut import data_folder, desktop_folder, desktop_shortcut, write_shortcut
@@ -92,8 +92,33 @@ def _read(path: str):
         raise SystemExit(f"{os.path.basename(path)}: {e}") from None
 
 
+def _read_two(pa: str, pb: str):
+    """Both files read; two different PDFs at once, the second in a worker process (`worker.py`)."""
+    with open(pa, "rb") as f:
+        da = f.read()
+    with open(pb, "rb") as f:
+        db = f.read()
+    if not (kind_of(da) == kind_of(db) == "pdf" and da != db):
+        return _read(pa), _read(pb)
+    from .worker import Unavailable, Worker
+    worker = Worker()
+    try:
+        ticket = worker.submit(db)
+        a = _read(pa)
+        if ticket is None:
+            return a, _read(pb)
+        try:
+            return a, worker.read(ticket)
+        except Unavailable:
+            return a, _read(pb)
+        except PdfRefused as e:
+            raise SystemExit(f"{os.path.basename(pb)}: {e}") from None
+    finally:
+        worker.close()
+
+
 def _compare(flags, pa, pb):
-    a, b = _read(pa), _read(pb)
+    a, b = _read_two(pa, pb)
     if a.source_kind != b.source_kind:
         raise SystemExit("Comparing a Word document with a PDF isn't supported yet.")
     a, b = documents(a, b)

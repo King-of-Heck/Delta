@@ -269,6 +269,23 @@ def _src_on_path() -> None:
         sys.path.insert(0, src)
 
 
+WORKER_SMOKE = """\
+import sys
+from delta.worker import Worker
+from delta.pdfread import read_pdf
+data = open(sys.argv[1], 'rb').read()
+w = Worker()
+try:
+    got = w.read(w.submit(data))
+    msg = 'worker ok' if w.broken is None and got == read_pdf(data) else f'worker broken: {w.broken}'
+except Exception as e:
+    msg = f'worker failed: {type(e).__name__}: {e}'
+finally:
+    w.close()
+open(sys.argv[2], 'w', encoding='utf-8').write(msg)
+"""
+
+
 def smoke(stage_dir: Path, version: str) -> None:
     """Run the staged interpreter the way the launcher will: version, imports, a PDF, a serve."""
     python_dir = layout_paths(stage_dir)["python"]
@@ -297,6 +314,14 @@ def smoke(stage_dir: Path, version: str) -> None:
     out = _run([py, "-m", "delta", "compare", str(work / "out.pdf"), str(work / "out.pdf")], stage_dir)
     if '"total": 0' not in out:
         raise RuntimeError(f"pdf compare smoke: {out!r}")
+    # Two different PDFs: the second is read in a worker process started from this same Python,
+    # under python.exe and under pythonw.exe (what the launcher runs). The check writes to a file
+    # because pythonw has no console.
+    for exe in ("python.exe", "pythonw.exe"):
+        done = work / f"worker-{exe}.txt"
+        _run([str(python_dir / exe), "-c", WORKER_SMOKE, str(work / "out.pdf"), str(done)], stage_dir)
+        if not done.exists() or done.read_text(encoding="utf-8") != "worker ok":
+            raise RuntimeError(f"worker smoke under {exe}: {done.read_text(encoding='utf-8') if done.exists() else 'nothing written'}")
     log = work / "delta.log"
     out = _run([py, *SMOKE_SERVE, f"--log={log}"], stage_dir, timeout=60)
     if '"url": "http://127.0.0.1:' not in out:

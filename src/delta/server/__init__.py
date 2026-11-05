@@ -27,7 +27,8 @@ read: a loopback server is reachable from every page the browser has open.
                               here); "saved" is when it was last saved (ISO 8601 UTC) or null;
                               touches no session state
   GET  /api/progress          {} when idle, else {"name", "page", "pages"}: how far the PDF being
-                              read by a compare in flight has got; never takes the session lock
+                              read by a compare in flight has got (two PDFs read at once: both names,
+                              pages summed); never takes the session lock
   POST /api/ping?hidden=0|1[&closing=0|1]
                               {"ok": true}; the page sends one every 2 s and on every change of
                               its visibility, saying whether it is hidden, and a closing=1 beacon
