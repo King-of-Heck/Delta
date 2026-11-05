@@ -146,14 +146,18 @@ def _parse(data: bytes) -> list:
     in_dict = False
     want_key = False                 # in a dictionary: the next token is a key
     has_dict = False                 # the pending operands include a dictionary
+    known: dict = {}                 # number and string tokens -> their values; they recur all through a page
     for num, name, op, lit, punct in _TOKEN.findall(data):
         if num:
-            if len(num) >= _MAX_NUM:
-                raise _Unsure
-            try:
-                value = float(num) if b"." in num else int(num)
-            except ValueError:
-                value = 0.0 if b"." in num else 0      # pypdf reads a malformed number as zero
+            value = known.get(num)
+            if value is None:
+                if len(num) >= _MAX_NUM:
+                    raise _Unsure
+                try:
+                    value = float(num) if b"." in num else int(num)
+                except ValueError:
+                    value = 0.0 if b"." in num else 0  # pypdf reads a malformed number as zero
+                known[num] = value
         elif op:
             if stack or len(op) >= _MAX_OP or op == b"BI" or op.startswith(b"stream"):
                 raise _Unsure            # true/false/null in an array, an inline image, a stream object
@@ -171,12 +175,15 @@ def _parse(data: bytes) -> list:
                 continue                 # a dictionary's keys and values are never used
             value = _name(name)
         elif lit:
-            if b"\\" in lit or lit.count(b"(") > 1:
-                value, end = _literal(lit, 1)
-                if end != len(lit):
-                    raise _Unsure
-            else:
-                value = lit[1:-1]
+            value = known.get(lit)
+            if value is None:
+                if b"\\" in lit or lit.count(b"(") > 1:
+                    value, end = _literal(lit, 1)
+                    if end != len(lit):
+                        raise _Unsure
+                else:
+                    value = lit[1:-1]
+                known[lit] = value
         else:
             c = punct[0]
             if c == 0x5B:            # "["
