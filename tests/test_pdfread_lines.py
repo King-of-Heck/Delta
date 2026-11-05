@@ -98,3 +98,22 @@ def test_a_line_knows_whether_its_last_drawn_text_was_a_space():
     assert ln.text == "at least A-" and ln.ends_spaced
     (ln,) = build_lines([R("a non-", 72, 100)])
     assert not ln.ends_spaced
+
+
+def test_a_run_joins_a_row_by_its_largest_run_even_when_that_run_came_later():
+    # "c" sits 7.5 pt under "B" (within 0.45 of 20 pt) but 8.5 pt under "a" (beyond 0.45 of 10 pt)
+    (ln,) = build_lines([R("a", 72, 80, y=100, size=10), R("B", 80, 100, y=101, size=20),
+                         R("c", 100, 108, y=108.5, size=10)])
+    assert ln.text == "aBc"
+
+
+def test_runs_at_the_same_left_edge_keep_their_drawing_order():
+    (ln,) = build_lines([R("a", 72, 80, y=100.0), R("b", 72, 80, y=100.1)])
+    assert ln.text == "ab"
+    (ln,) = build_lines([R("b", 72, 80, y=100.1), R("a", 72, 80, y=100.0)])
+    assert ln.text == "ab"
+
+
+def test_a_line_spans_its_inked_runs_only():
+    (ln,) = build_lines([R(" ", 60, 72), R("word", 72, 100), R(" ", 100, 104)])
+    assert (ln.text, ln.x0, ln.x1, ln.ends_spaced) == ("word", 72, 100, True)
