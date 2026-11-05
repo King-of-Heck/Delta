@@ -5,6 +5,9 @@ Successor to SorkWhare Compare. Runs from a single downloaded folder
 and produces a paged on-screen redline and a PDF from one layout engine. Documents
 never leave the machine.
 
+To compare a few paragraphs without making files, paste them into the two boxes under the drop
+cards: the redline appears under them as you type, and Copy redline copies it for Word or Outlook.
+
 Status: v2.11.3 (see `CHANGELOG.md`).
 
 ## Running from the release zip

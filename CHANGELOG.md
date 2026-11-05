@@ -23,6 +23,9 @@
   not stay behind.
 - The log (`%LOCALAPPDATA%\Delta\delta.log`) says why Delta stopped: Quit, or how long it had
   heard nothing from its window.
+- Two text boxes under the drop cards compare pasted text at once, as you type: each line is a
+  paragraph, the redline shows under the boxes with its count, and Copy redline puts it on the
+  clipboard as struck and underlined text for Word or Outlook. They are on the start screen only.
 
 ## v2.12.5 — Newer document as Modified (2026-10-28)
 
