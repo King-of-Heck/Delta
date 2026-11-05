@@ -1,7 +1,14 @@
 # Delta changelog
 
-## Unreleased — Delta keeps running while its window is open, and compares faster
+## Unreleased — Word compared with PDF; Delta keeps running and compares faster
 
+- A Word document can be compared with a PDF, in either order, on wording and numbering only:
+  formatting, headers, footers and comments are not compared, and the app and the PDF summary say
+  so. It can report changes that are not real on form and signature pages, where a Word table
+  without visible borders and the PDF hold the same words in a different order; check those pages
+  by eye. The main clauses are reliable, and every real edit still appears.
+- Word numbering past (z) repeats the letter as Word prints it: (aa), (bb), (cc). A LISTNUM field
+  prints its number, as Word does.
 - Comparing two PDFs takes well under half the time it did: a page's text is read by Delta's own
   reader rather than the general PDF library, and the two PDFs of a pair are read at the same
   time, the second by a helper process that Delta starts and stops itself. A 190-page pair went
