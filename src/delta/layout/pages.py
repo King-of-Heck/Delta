@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, field
 from .pieces import LayoutOptions
 
 
-@dataclass
+@dataclass(slots=True)
 class GlyphRun:
     text: str
     x: float

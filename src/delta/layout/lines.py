@@ -37,7 +37,7 @@ MARK_SCALE = 0.65      # a reference mark's size relative to its text
 MARK_RISE = 0.35       # and how far above the baseline it sits, relative to the text size
 
 
-@dataclass
+@dataclass(slots=True)
 class Run:
     text: str
     w: float

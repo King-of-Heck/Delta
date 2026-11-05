@@ -350,6 +350,27 @@ def test_side_layouts_and_drawings_are_kept_until_the_next_commit(monkeypatch):
     assert calls[n:] == ["layout", "render"]
 
 
+def test_the_same_pair_loaded_again_keeps_its_comparison(monkeypatch):
+    import delta.server.session as mod
+    a, b = _docx(P("aaaa") + P("old")), _docx(P("aaaa") + P("new"))
+    s = Session(fonts=FR, clock=lambda: WHEN)
+    s.load("a.docx", a, "b.docx", b)
+    before = s.payload()
+    cmp = s.cmp
+    calls = []
+    for name in ("compare", "layout"):
+        real = getattr(mod, name)
+        monkeypatch.setattr(mod, name, lambda *x, _r=real, _n=name, **k: (calls.append(_n), _r(*x, **k))[1])
+    s.load("c.docx", a, "d.docx", b)                       # the same files again (parsed once, so the same documents)
+    after = s.payload()
+    assert s.cmp is cmp and "compare" not in calls and "layout" in calls
+    assert after["names"] == {"original": "c.docx", "modified": "d.docx"}
+    named = ("names", "report_lines")                      # the two that name the files
+    assert {k: v for k, v in after.items() if k not in named} == {k: v for k, v in before.items() if k not in named}
+    s.load("c.docx", b, "d.docx", a)                      # Swap compares again
+    assert s.cmp is not cmp and calls.count("compare") == 1
+
+
 def test_a_side_that_fails_to_lay_out_leaves_the_comparison_shown(monkeypatch):
     import delta.server.session as mod
     s = _session(P("aaaa") + P("old"), P("aaaa") + P("new"))

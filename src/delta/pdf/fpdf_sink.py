@@ -27,6 +27,7 @@ class FpdfPainter:
             self.pdf.set_creation_date(creation)
         self._fonts: dict[tuple[str, int], str] = {}
         self._colors: dict[str, object] = {}       # 6-hex -> fpdf2 device colour (see _color)
+        self._font: tuple | None = None            # (family, size) of the last set_font call
 
     # -- Painter ---------------------------------------------------------------------------
     def page(self, w: float, h: float) -> None:
@@ -38,7 +39,12 @@ class FpdfPainter:
         if not text:
             return
         p = self.pdf
-        p.set_font(self._family(face), "", size)
+        font = (self._family(face), size)
+        if font != self._font:
+            # The same font again is a call fpdf2 returns from at once (its font state is ours:
+            # nothing else here sets a font, and a new page or a local context keeps it).
+            p.set_font(font[0], "", size)
+            self._font = font
         p.set_text_color(self._color(color))
         if not fake_bold:
             self._emit(x, baseline, text, fake_italic)

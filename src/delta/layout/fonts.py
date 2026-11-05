@@ -139,7 +139,12 @@ class Face:
         return u
 
     def width(self, text: str, size: float) -> float:
-        return self.units(text) * size / self.upem if text else 0.0
+        if not text:
+            return 0.0
+        u = self._units.get(text)              # units() inlined for a text measured before
+        if u is None:
+            u = self.units(text)
+        return u * size / self.upem
 
     def line_height(self, size: float) -> float:
         return (self._asc + self._desc + self._gap) * size / self.upem

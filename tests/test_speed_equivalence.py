@@ -2,10 +2,14 @@
 keeps the plain form as its reference and checks the fast one against it on small built inputs,
 including the odd cases a real document rarely has."""
 import itertools
+import os
 import random
 import re
+from datetime import datetime
 from xml.sax.saxutils import escape, quoteattr
 
+import pytest
+from fpdf.enums import TextMode
 from lxml import etree
 
 from delta.diff.chars import FmtSpan, char_fmt
@@ -15,7 +19,9 @@ from delta.docx.package import Package
 from delta.docx.styles import read_ppr, read_rpr
 from delta.layout.lines import Run as LRun
 from delta.model import WS_CHARS, Paragraph, ParaProps, Run, RunProps
-from delta.pdf.fpdf_sink import ITALIC_DEGREES, STROKE_FRACTION
+from delta.layout.fonts import default_dirs, default_resolver
+from delta.pdf.fpdf_sink import ITALIC_DEGREES, STROKE_FRACTION, FpdfPainter
+from delta.pdf.painter import rgb
 from delta.testing.fakefonts import FakeFace
 from delta.testing.makedocx import DOC, P, make_docx
 from delta.viewer.svg import SvgPainter
@@ -181,6 +187,54 @@ def test_is_space_matches_the_regex_for_every_whitespace_character_and_mixes():
         r = LRun(t, 0.0, None, None, 10.0)
         assert r.is_space == bool(ws.match(t)), repr(t)
     assert LRun(" ", 0.0, None, None, 10.0, tab=True).is_space is False
+
+
+# -- FpdfPainter: colours converted once, a repeated font not set again ---------------------------
+
+class _PlainFpdfPainter(FpdfPainter):
+    """The painter as it was: every call converts its colour and sets the font."""
+
+    def text(self, x, baseline, text, face, size, color, fake_bold=False, fake_italic=False, width=None,
+             role=None):
+        if not text:
+            return
+        p = self.pdf
+        p.set_font(self._family(face), "", size)
+        p.set_text_color(*rgb(color))
+        if not fake_bold:
+            self._emit(x, baseline, text, fake_italic)
+            return
+        with p.local_context(text_mode=TextMode.FILL_STROKE, line_width=size * STROKE_FRACTION,
+                             draw_color=rgb(color)):
+            self._emit(x, baseline, text, fake_italic)
+
+    def _color(self, color):
+        return rgb(color)
+
+
+@pytest.mark.skipif(not any(os.path.isdir(d) for d in default_dirs()), reason="no system font directory")
+def test_the_pdf_bytes_are_those_of_the_plain_painter():
+    res = default_resolver()
+    faces = [res.face("Calibri"), res.face("Calibri", bold=True), res.face("Times New Roman", italic=True)]
+    rng = random.Random(5)
+    outs = []
+    for cls in (FpdfPainter, _PlainFpdfPainter):
+        rng.seed(5)
+        p = cls(creation=datetime(2026, 1, 1))
+        for _ in range(3):
+            p.page(612, 792)
+            for i in range(60):
+                face, size = rng.choice(faces), rng.choice([9.0, 11.0, 11.0, 12.5])
+                color = rng.choice(["000000", "0000ff", "ff0000"])
+                p.text(72 + i, 80 + i * 10, rng.choice(["word", "two words", " "]), face, size, color,
+                       rng.random() < 0.2, rng.random() < 0.2, width=30.0)
+                if rng.random() < 0.2:
+                    p.rule(72, 120, 85 + i * 10, 0.5, color, rng.random() < 0.5)
+                if rng.random() < 0.1:
+                    p.box(70, 70 + i * 10, 40, 10, "eeeeff")
+                    p.line(60, 70, 60, 90, 1.5, "000000")
+        outs.append(p.output())
+    assert outs[0] == outs[1]
 
 
 # -- SvgPainter.text: one string built in place ------------------------------------------------
