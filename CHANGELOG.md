@@ -1,7 +1,14 @@
 # Delta changelog
 
-## Unreleased — Delta keeps running while its window is open
+## Unreleased — Delta keeps running while its window is open, and compares faster
 
+- Comparing two PDFs takes well under half the time it did: a page's text is read by Delta's own
+  reader rather than the general PDF library, and the two PDFs of a pair are read at the same
+  time, the second by a helper process that Delta starts and stops itself. A 190-page pair went
+  from about 15 seconds to about 4.5 on a desktop. Comparing two Word documents is about a third
+  faster. The results are exactly the same as before.
+- Changing only what is shown on the page (the Options toggles that hide unchanged text,
+  insertions, deletions or formatting) no longer runs the comparison again.
 - Delta no longer stops while its window is minimized, covered or behind a locked screen. Before,
   it could stop after about a minute and a half in the background, and coming back showed "Delta
   is no longer running". It still stops a few seconds after the window is closed.
