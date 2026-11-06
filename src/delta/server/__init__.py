@@ -41,7 +41,8 @@ read: a loopback server is reachable from every page the browser has open.
 The server also stops --idle seconds after the last request once the page has been seen
 (default 8, so closing the window stops it; 0 = never), and --grace seconds (default 120) after
 start if no page ever arrives. A machine that sleeps does not count as silence, and a page that
-says it is hidden has no limit: the browser throttles or freezes a hidden window's timers. The
+says it is hidden has no limit: the browser throttles or freezes a hidden window's timers. A page
+back from hidden, like a machine back from sleep, gets the --grace seconds until its next request. The
 closing beacon is final, so the close's own hidden=1 ping arriving after it does not keep the
 server waiting; a page loading again clears it. `python -m delta serve` records its address in
 the data folder and quits the server recorded there before it (`previous.py`).

@@ -18,7 +18,9 @@
   insertions, deletions or formatting) no longer runs the comparison again.
 - Delta no longer stops while its window is minimized, covered or behind a locked screen. Before,
   it could stop after about a minute and a half in the background, and coming back showed "Delta
-  is no longer running". It still stops a few seconds after the window is closed.
+  is no longer running". Waking the screen after a night locked no longer stops it either: the
+  window now gets two minutes to come back from behind the lock screen. It still stops a few
+  seconds after the window is closed.
 - Starting Delta quits any older Delta still running, so one left over after a browser crash does
   not stay behind.
 - The log (`%LOCALAPPDATA%\Delta\delta.log`) says why Delta stopped: Quit, or how long it had

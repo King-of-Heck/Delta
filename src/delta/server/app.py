@@ -299,7 +299,10 @@ class Handler(BaseHTTPRequestHandler):
     def _api_ping(self, session, query):
         """A hidden page has no idle limit, so the close must be final: the closing beacon
         (`closing=1`, sent on pagehide) is not undone by the hidden=1 ping of the same close
-        arriving after it. A page that loads or pings visible again (a reload) clears it."""
+        arriving after it. A page that loads or pings visible again (a reload) clears it.
+        A page back from hidden gets the grace, as after a sleep: a screen waking after a night
+        locked makes Edge ping visible once, then it may hold the page paused behind the lock
+        screen for well over the idle limit. Its next request puts it back on the normal limit."""
         hidden = _flag(query, "hidden", False)
         closing = _flag(query, "closing", False)
         self._drain()
@@ -307,6 +310,8 @@ class Handler(BaseHTTPRequestHandler):
         if closing:
             server.closing, server.hidden = True, False
         elif not hidden:
+            if server.hidden:
+                server.visited = False
             server.closing, server.hidden = False, False
         elif not server.closing:
             server.hidden = True

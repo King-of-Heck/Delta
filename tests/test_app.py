@@ -423,6 +423,34 @@ def test_a_reload_after_the_closing_beacon_clears_it(srv):
     assert srv.server.hidden is True                  # and the page may be hidden again
 
 
+def test_a_page_back_from_hidden_gets_the_grace(srv):
+    # A window hidden all night (screen off or locked) pings visible once as the screen wakes, then
+    # Edge may hold it paused behind the lock screen for well over the idle limit: not a close.
+    assert _json(srv.url + "api/ping?hidden=1", "POST", {}) == (200, {"ok": True})
+    assert _json(srv.url + "api/ping?hidden=0", "POST", {}) == (200, {"ok": True})
+    assert srv.server.hidden is False and srv.server.visited is False
+    t, server, shut, _ = _fake_server(hidden=False, visited=srv.server.visited)
+    _run_watchdog(t, server, [1.0] * 100, grace=120.0)
+    assert shut == []                                 # 100 s of silence, within the grace
+    t, server, shut, _ = _fake_server(hidden=False, visited=srv.server.visited)
+    _run_watchdog(t, server, [1.0] * 200, grace=120.0)
+    assert shut == [121.0]                            # a window that never resumes still stops
+    assert _json(srv.url + "api/ping?hidden=0", "POST", {}) == (200, {"ok": True})
+    assert srv.server.visited is True                 # the next ping is back on the normal limit
+
+
+def test_a_visible_ping_while_visible_keeps_the_normal_limit(srv):
+    assert _json(srv.url + "api/ping?hidden=0", "POST", {}) == (200, {"ok": True})
+    assert _json(srv.url + "api/ping?hidden=0", "POST", {}) == (200, {"ok": True})
+    assert srv.server.visited is True
+
+
+def test_a_close_from_hidden_gets_no_grace(srv):
+    assert _json(srv.url + "api/ping?hidden=1", "POST", {}) == (200, {"ok": True})
+    assert _json(srv.url + "api/ping?hidden=0&closing=1", "POST", {}) == (200, {"ok": True})
+    assert srv.server.visited is True and srv.server.closing is True
+
+
 def test_ping_checks_the_closing_flag(srv):
     assert _json(srv.url + "api/ping?closing=maybe", "POST", {}) == (400, {"error": "closing must be 0 or 1"})
     assert srv.server.closing is False
