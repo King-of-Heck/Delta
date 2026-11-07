@@ -25,6 +25,8 @@ from .session import BadRequest, NoComparison, Session, check_render, parse_opti
 from .launch import open_viewer
 from ..worker import Worker
 
+DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
 STATIC = {"index.html": "text/html; charset=utf-8", "style.css": "text/css; charset=utf-8",
           "app.js": "text/javascript; charset=utf-8", "changes.js": "text/javascript; charset=utf-8",
           "sources.js": "text/javascript; charset=utf-8", "strip.js": "text/javascript; charset=utf-8",
@@ -270,7 +272,7 @@ class Handler(BaseHTTPRequestHandler):
             if not path.startswith("/api/"):
                 raise _Bad(404, "not found")
             route = path[len("/api/"):]
-            allowed = {"state": "GET", "pages": "GET", "pdf": "GET", "compare": "POST", "layout": "POST",
+            allowed = {"state": "GET", "pages": "GET", "pdf": "GET", "docx": "GET", "compare": "POST", "layout": "POST",
                        "inspect": "POST", "text": "POST", "progress": "GET", "ping": "POST", "quit": "POST"}.get(route)
             if allowed is None:
                 raise _Bad(404, "not found")
@@ -417,6 +419,13 @@ class Handler(BaseHTTPRequestHandler):
         with session.lock:
             data, name = session.pdf(rs, bars, report, only)
         self._send(200, data, "application/pdf", {"Content-Disposition": _disposition(name)})
+
+
+    def _api_docx(self, session, query):
+        author = (query.get("author", ["Delta"])[0] or "").strip()[:255] or "Delta"
+        with session.lock:
+            data, name = session.docx(author)
+        self._send(200, data, DOCX_TYPE, {"Content-Disposition": _disposition(name)})
 
 
 class Server(ThreadingHTTPServer):

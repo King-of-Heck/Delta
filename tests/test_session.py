@@ -490,3 +490,24 @@ def test_progress_is_visible_while_a_pdf_is_read(monkeypatch):
     monkeypatch.setattr(session_module, "read_source", slow)
     s.load("a.pdf", _pdf("x"), "b.pdf", _pdf("y"))
     assert seen[0] == {"name": "a.pdf", "page": 1, "pages": 2} and s.progress is None
+
+
+def test_word_export_bytes_and_file_name():
+    import zipfile, io
+    s = Session(fonts=FR, clock=lambda: WHEN)
+    s.load("Draft v1.docx", _docx(P("aaaa cccc")), "Draft v2.docx", _docx(P("aaaa bbbb")))
+    data, name = s.docx("Pat Lee")
+    assert name == "Draft v1 vs Draft v2 tracked.docx"
+    xml = zipfile.ZipFile(io.BytesIO(data)).read("word/document.xml").decode()
+    assert 'w:author="Pat Lee"' in xml and 'w:date="2026-09-09T14:05:00Z"' in xml
+    assert "cccc" in xml and "<w:delText" in xml
+
+
+def test_word_export_needs_a_comparison_of_two_word_documents():
+    from delta.server.session import BadRequest, NoComparison
+    s = Session(fonts=FR, clock=lambda: WHEN)
+    with pytest.raises(NoComparison):
+        s.docx()
+    s.load("a.pdf", _pdf("aaaa"), "b.pdf", _pdf("aaaa bbbb"))
+    with pytest.raises(BadRequest):
+        s.docx()

@@ -803,3 +803,20 @@ def test_text_compare_drops_stale_answers_and_keeps_text_drops():
     assert 'classList.contains("compact")' in js                                  # no hidden compares:
     assert _function_body(js, "schedule").split("{", 1)[1].lstrip().startswith("if (compact()) return;")
     assert "inflight" in js and "dirty" in js                # one request in flight, one catch-up
+
+
+def test_save_word_button_and_author_box():
+    html = _read("index.html")
+    header = html[html.index("<header"):html.index("</header>")]
+    assert header.index('id="pdf"') < header.index('id="docx"') < header.index('id="keysOpen"')
+    assert re.search(r'<button id="docx"[^>]*\bhidden\b[^>]*>Save Word</button>', header)
+    popover = header[header.index('id="options"'):]
+    word = popover[popover.index("<h4>Word"):]
+    assert 'id="docxAuthor"' in word and 'value="Delta"' in word
+    js = _read("app.js")
+    body = _function_body(js, "saveDocx")
+    assert "/api/docx?author=" in body and "encodeURIComponent" in body
+    assert '"delta.docxAuthor"' in js
+    # only for two Word documents: a PDF pair or a Word / PDF pair has no Word XML to mark
+    assert 'source.kind === "docx"' in _function_body(js, "show")
+    assert '$("docx").addEventListener("click", saveDocx)' in js

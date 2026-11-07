@@ -9,6 +9,8 @@
                             [--hide-unchanged] [--hide-insertions] [--hide-deletions]
                             [--hide-formatting] [--no-change-bars] [--render-set=NAME]
                             [--report=first|last|none] [--changed-only]
+    python -m delta docx <a.docx> <b.docx> <out.docx> [--author=NAME] [--ignore-case]
+                            (Word documents only: b with the differences as Word tracked changes)
     python -m delta serve [--port=N] [--idle=SECONDS] [--grace=SECONDS] [--log=PATH]
                               [--shortcut=LAUNCHER.cmd] [--no-browser] [--verbose]
     python -m delta version
@@ -52,6 +54,7 @@ _HIDE_FLAGS = {"--hide-unchanged", "--hide-insertions", "--hide-deletions", "--h
 _LAYOUT_FLAGS = _COMPARE_FLAGS | _HIDE_FLAGS | {"--pages"}
 _PDF_FLAGS = _COMPARE_FLAGS | _HIDE_FLAGS | {"--no-change-bars", "--changed-only"}
 _PDF_VALUED = {"--render-set", "--report"}
+_DOCX_VALUED = {"--author"}
 _SERVE_FLAGS = {"--no-browser", "--verbose"}
 _SERVE_VALUED = {"--port", "--idle", "--grace", "--log", "--shortcut"}
 LOG_ROTATE_BYTES = 1_000_000
@@ -182,6 +185,27 @@ def main(argv) -> int:
         with open(out_path, "wb") as f:
             f.write(data)
         print(json.dumps({"pages": drawn.pages, "out": out_path}, ensure_ascii=True))
+        return 0
+    if argv and argv[0] == "docx":
+        parsed = _parse(argv[1:], {"--ignore-case"}, _DOCX_VALUED, n=3)
+        if parsed is None:
+            print(USAGE)
+            return 2
+        flags, values, (pa, pb, out_path) = parsed
+        from .docx.tracked import NotWord, export_tracked
+        with open(pa, "rb") as f:
+            da = f.read()
+        with open(pb, "rb") as f:
+            db = f.read()
+        try:
+            data = export_tracked(da, db, author=values.get("--author", "Delta"), when=datetime.now(),
+                                  ignore_case="--ignore-case" in flags)
+        except NotWord as e:
+            print(str(e))
+            return 2
+        with open(out_path, "wb") as f:
+            f.write(data)
+        print(json.dumps({"out": out_path}, ensure_ascii=True))
         return 0
     if argv and argv[0] == "serve":
         parsed = _parse(argv[1:], _SERVE_FLAGS, _SERVE_VALUED, n=0)

@@ -1,6 +1,6 @@
 # Delta changelog
 
-## Unreleased — Word compared with PDF; Delta keeps running and compares faster
+## Unreleased — Word compared with PDF; Delta keeps running and compares faster; Word with tracked changes
 
 - A Word document can be compared with a PDF, in either order, on wording and numbering only:
   formatting, headers, footers and comments are not compared, and the app and the PDF summary say
@@ -31,6 +31,12 @@
 - A comment's words are tinted in the redline, in its bubble's colour, and a faint dotted line runs
   from the end of those words to its bubble, so each comment shows which text it is about. A
   comment on a point rather than a range starts its line at that point. The same in the PDF.
+- Save Word, beside Save PDF, writes the comparison as a Word document with tracked changes: the
+  Modified with each insertion, deletion, formatting change and list change as a Word revision,
+  in the body, tables, footnotes, endnotes, headers and footers, so the changes can be accepted or
+  rejected one by one in Word. Accept All gives the Modified, Reject All the Original. Options >
+  Word sets the author name the changes carry ("Delta" unless changed). Two Word documents only.
+  From the command line: `python -m delta docx a.docx b.docx out.docx [--author=NAME]`.
 
 ## v2.12.5 — Newer document as Modified (2026-10-28)
 

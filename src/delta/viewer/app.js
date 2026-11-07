@@ -144,6 +144,7 @@ function enableControls(on) {
   $("renderSet").disabled = !on;
   $("changeBars").disabled = !on;
   $("pdf").disabled = !(on && state.data);
+  $("docx").disabled = !(on && state.data);
   // Marks stays off while a request is in flight; re-enabling still respects the "neither side
   // pane on" rule (panes.js's applyPanes disables it too, but a request can finish after that).
   $("viewMarks").disabled = !on || !(state.views.original || state.views.modified);
@@ -257,6 +258,9 @@ function show(data) {
   $("changeBars").checked = data.change_bars;
   setOptions(data.options);
   $("pdf").disabled = false;
+  // two Word documents only: a PDF on either side has no Word XML to carry tracked changes
+  $("docx").hidden = !(data.source && data.source.kind === "docx");
+  $("docx").disabled = false;
   document.title = `${data.names.original} vs ${data.names.modified} — Delta`;
   renderPages();
   applyStyles();
@@ -394,6 +398,11 @@ function savePdf() {
   window.location.href = `/api/pdf?${q}`;
 }
 
+function saveDocx() {
+  const author = $("docxAuthor").value.trim() || "Delta";
+  window.location.href = `/api/docx?author=${encodeURIComponent(author)}`;
+}
+
 function closed(text) {
   state.closed = true;
   clearInterval(state.timer);
@@ -441,7 +450,7 @@ function wirePopover() {
 // The app was called Calandria up to v2.11.3: its saved choices carry over once, under the new names.
 function carryOldSettings() {
   try {
-    for (const key of ["deferPages", "changedOnly", "panel"]) {
+    for (const key of ["deferPages", "changedOnly", "panel", "docxAuthor"]) {
       const old = localStorage.getItem(`calandria.${key}`);
       if (old !== null && localStorage.getItem(`delta.${key}`) === null) localStorage.setItem(`delta.${key}`, old);
       localStorage.removeItem(`calandria.${key}`);
@@ -502,6 +511,11 @@ function wire() {
   window.addEventListener("resize", () => { if (state.fit) applyZoom(); });
   for (const el of [$("paneOriginal"), $("pages"), $("paneModified")]) el.addEventListener("scroll", updatePageStatus);
   $("pdf").addEventListener("click", savePdf);
+  $("docx").addEventListener("click", saveDocx);
+  try { $("docxAuthor").value = localStorage.getItem("delta.docxAuthor") || "Delta"; } catch (e) { /* storage off */ }
+  $("docxAuthor").addEventListener("change", (e) => {
+    try { localStorage.setItem("delta.docxAuthor", e.target.value.trim() || "Delta"); } catch (e2) { /* storage off */ }
+  });
   $("quit").addEventListener("click", quit);
   document.addEventListener("visibilitychange", ping);   // tell the server at once, either way
   // The window closing fires visibilitychange (hidden=1, which would keep the server waiting for

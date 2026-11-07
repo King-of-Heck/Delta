@@ -21,6 +21,8 @@ read: a loopback server is reachable from every page the browser has open.
                               -> {"render_set", "change_bars", "pages", "report_lines"}
   GET  /api/pdf?render_set=NAME&change_bars=0|1&report=first|last|none&changed_only=0|1
                               -> application/pdf as an attachment
+  GET  /api/docx?author=NAME  -> the Modified .docx with the comparison as Word tracked changes, as an
+                              attachment (two Word documents only, else 400)
   POST /api/inspect           {"name", "data" (base64 .docx or PDF)} -> {"name", "kind", "tracked",
                               "pages", "saved"}: a Word document's tracked changes (read as accepted,
                               "pages" null) or a PDF's page count ("tracked" null, its text not read

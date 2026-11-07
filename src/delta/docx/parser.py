@@ -69,6 +69,7 @@ class _Ctx:
         self.para_markers: list = []        # (cid, which, raw_offset) collected in _runs, folded in _paragraph
         self.raw_len = 0                    # concatenated raw run text length so far in this paragraph
         self.style_props: dict = {}         # style id -> (resolved pPr, resolved rPr); styles never change mid-parse
+        self.keep_xml = False               # set Paragraph.xml to the w:p read
 
     def resolved(self, style_id) -> tuple[dict, dict]:
         """The style chain's (pPr, rPr) dicts, resolved once per style id. Shared: read, never written."""
@@ -86,10 +87,13 @@ def parse_docx(src) -> Document:
         return parse_package(pkg)
 
 
-def parse_package(pkg: Package) -> Document:
+def parse_package(pkg: Package, keep_xml: bool = False) -> Document:
+    """keep_xml: every Paragraph keeps its w:p element (`Paragraph.xml`), so a caller can edit the
+    package's trees paragraph by paragraph (docx.tracked)."""
     styles = Styles.parse(pkg.xml("word/styles.xml"))
     numbering = Numbering.parse(pkg.xml("word/numbering.xml"))
     ctx = _Ctx(styles, numbering)
+    ctx.keep_xml = keep_xml
     ctx.rels = pkg.rels("word/document.xml")
     root = pkg.xml("word/document.xml")
     body = root.find(wq("body")) if root is not None else None
@@ -419,6 +423,8 @@ def _paragraph(el, ctx: _Ctx) -> Paragraph:
                       mark_font=mark.get("font") or ctx.styles.defaults["font"],
                       mark_size_pt=mark.get("size_pt") or ctx.styles.defaults["size_pt"])
     p = Paragraph(runs, props, num)
+    if ctx.keep_xml:
+        p.xml = el
     if ctx.para_markers:
         from .comments import CommentAnchor
         for cid, which, off in ctx.para_markers:

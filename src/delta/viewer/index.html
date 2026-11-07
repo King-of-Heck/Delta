@@ -32,6 +32,7 @@
       <button id="zoomFit" title="Fit the page width" aria-pressed="false">Fit</button>
     </span>
     <button id="pdf" disabled>Save PDF</button>
+    <button id="docx" hidden title="The Modified as a Word document with the changes as tracked changes">Save Word</button>
     <button id="keysOpen" title="Keyboard shortcuts (?)">?</button>
     <details id="options" class="options">
       <summary title="Comparison, page, rendering and PDF settings">Options ▾</summary>
@@ -53,6 +54,8 @@
         <label>Summary <select id="report">
           <option value="last" selected>Last page</option><option value="first">First page</option><option value="none">None</option></select></label>
         <label title="Write only the first page and the pages with a change"><input type="checkbox" id="changedOnly"> Changed pages only</label>
+        <h4>Word <small>two Word documents only</small></h4>
+        <label title="The name Word shows on each tracked change">Track changes author <input type="text" id="docxAuthor" value="Delta" maxlength="255" spellcheck="false"></label>
         <div class="quitrow"><button id="quit" class="quit" title="Stop Delta (closing the window does the same)">Quit Delta</button></div>
       </div>
     </details>

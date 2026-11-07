@@ -1,4 +1,5 @@
 import base64
+import io
 import http.client
 import json
 import os
@@ -940,3 +941,17 @@ def test_text_refuses_a_broken_character(srv):
 def test_text_is_refused_cross_origin(srv):
     assert _post_with_headers(srv.url + "api/text", {"Origin": "http://evil.example"}) == \
         (403, {"error": "cross-origin request refused"})
+
+
+def test_word_export_download(srv):
+    import zipfile
+    assert _json(srv.url + "api/compare", "POST", _compare_body(P("aaaa cccc"), P("aaaa bbbb")))[0] == 200
+    status, headers, data = _req(srv.url + "api/docx?author=Pat%20Lee")
+    assert status == 200
+    assert headers["Content-Type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    assert headers["Content-Disposition"] == appmod._disposition("a vs b tracked.docx")
+    assert 'w:author="Pat Lee"' in zipfile.ZipFile(io.BytesIO(data)).read("word/document.xml").decode()
+
+
+def test_word_export_before_a_comparison_is_409(srv):
+    assert _req(srv.url + "api/docx")[0] == 409

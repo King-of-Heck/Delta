@@ -49,6 +49,7 @@ python -m delta pdf <a.docx> <b.docx> <out.pdf> [--ignore-case] [--no-count-numb
                         [--hide-unchanged] [--hide-insertions] [--hide-deletions]
                         [--hide-formatting] [--no-change-bars] [--render-set=NAME]
                         [--report=first|last|none] [--changed-only]
+python -m delta docx <a.docx> <b.docx> <out.docx> [--author=NAME] [--ignore-case]
 python -m delta serve [--port=N] [--idle=SECONDS] [--grace=SECONDS] [--log=PATH]
                           [--no-browser] [--verbose]
 ```
@@ -100,8 +101,26 @@ omit) and a change number in the gutter, tables draw a uniform 0.5 pt grid, and 
 (names, date, rendering set, options, counts) goes on the last page (`--report=first` for its own
 page before the document, `--report=none` to omit). `--changed-only` writes only the first page
 and the pages with a change; the summary block says how many of the document's pages are shown.
-Change bars, change numbers and the summary exist only in the PDF and the viewer; nothing is
-written back to Word.
+Change bars, change numbers and the summary exist only in the PDF and the viewer; the two
+source files are never changed.
+
+## Word with tracked changes
+
+`docx` (and Save Word in the app, beside Save PDF) writes the Modified document again with the
+comparison as Word tracked changes: inserted text marked as inserted, the Original's deleted text
+put back and marked as deleted, a reformatted run as a formatting change, a paragraph whose list
+or level changed as a paragraph formatting change, a table row only one side has as an inserted or
+deleted row, and footnotes, endnotes, headers and footers the same way. Everything else is the
+Modified's own: styles, numbering, images, page setup, comments. In Word, Accept All gives the
+Modified and Reject All the Original. Each change carries the author given (`--author=NAME`, in
+the app Options > Word; "Delta" when none) and the time of the export. Tracked changes already in
+either file are read as accepted first, as for the redline.
+
+Only two Word documents can be exported this way; a PDF has no Word document to carry the marks.
+Limits: a header or footer the Original shows and the Modified's section no longer names is not
+put back on Reject (Word cannot track that); empty Original paragraphs and images inside deleted
+text are not put back; comments only the Original has are not brought back; a paragraph holding a
+page-number field is marked whole (all of the old paragraph deleted, all of the new inserted).
 
 The corpus gate `tests/parity/test_pdf.py` checks that every pair's PDF has exactly the layout's
 page count and that its text reads back.

@@ -360,3 +360,26 @@ def test_mixed_kinds_compare_on_the_command_line(tmp_path, capsys):
     b.write_bytes(make_pdf([[("text", 72, 100, 12, "x")]]))
     assert main(["compare", str(a), str(b)]) == 0
     assert '"total": 0' in capsys.readouterr().out
+
+
+def test_docx_command_writes_a_tracked_word_document(tmp_path, capsys):
+    import zipfile
+    a = _write(tmp_path, "a.docx", P("Alpha beta."))
+    b = _write(tmp_path, "b.docx", P("Alpha gamma."))
+    out = str(tmp_path / "tracked.docx")
+    assert main(["docx", "--author=Sandy", a, b, out]) == 0
+    assert json.loads(capsys.readouterr().out) == {"out": out}
+    xml = zipfile.ZipFile(out).read("word/document.xml").decode()
+    assert "<w:delText" in xml and "<w:ins " in xml and 'w:author="Sandy"' in xml
+
+
+def test_docx_command_refuses_a_pdf_and_bad_usage(tmp_path, capsys):
+    from delta.testing.makepdf import make_pdf
+    a = _write(tmp_path, "a.docx", P("Alpha"))
+    pdf = tmp_path / "b.pdf"
+    pdf.write_bytes(make_pdf([[("text", 72, 100, 12, "Alpha")]]))
+    out = str(tmp_path / "o.docx")
+    assert main(["docx", a, str(pdf), out]) == 2
+    assert "two Word documents" in capsys.readouterr().out
+    assert main(["docx", a, a]) == 2                          # three positionals needed
+    assert main(["docx", a, a, out, "--hide-unchanged"]) == 2  # a layout-only flag

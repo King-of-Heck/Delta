@@ -132,6 +132,9 @@ class Paragraph:
     runs: list[Run]
     props: ParaProps
     num: NumInfo | None = None
+    # the w:p element this paragraph was read from: only when the parser is asked to keep it (the
+    # tracked-changes export); never compared, never shown
+    xml: object = field(default=None, compare=False, repr=False)
 
     @property
     def text(self) -> str:

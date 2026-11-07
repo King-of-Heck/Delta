@@ -185,6 +185,7 @@ class Session:
         self.last_seen = time.monotonic()
         self.a_name = self.b_name = None
         self.a_doc = self.b_doc = None
+        self._sources = (None, None)            # the loaded pair's bytes (load)
         self.options = Options()
         self.cmp: Comparison | None = None
         self.layout: Layout | None = None
@@ -323,6 +324,7 @@ class Session:
         a, b = _finish(a, b)
         self._timed("parse", t0)
         self._commit(a_name, b_name, a, b, options or self.options)
+        self._sources = (a_bytes, b_bytes)      # the Word export edits the files themselves
 
     def relayout(self, options: Options) -> None:
         if self.a_doc is None:
@@ -413,6 +415,18 @@ class Session:
                 "render_sets": list(RENDER_SETS),
                 "render_set_styles": {k: v.to_dict() for k, v in RENDER_SETS.items()},
                 **self.pages(render_set, change_bars, marks, sides)}
+
+    def docx(self, author: str = "Delta") -> tuple[bytes, str]:
+        """(.docx bytes, a file name): the Modified with the comparison as Word tracked changes.
+        Two Word documents only (a PDF has no Word XML to carry the marks)."""
+        self._need()
+        if self.a_doc.source_kind != "docx" or self.b_doc.source_kind != "docx":
+            raise BadRequest("the Word export needs two Word documents")
+        from ..docx.tracked import export_tracked
+        a_bytes, b_bytes = self._sources
+        data = export_tracked(a_bytes, b_bytes, author=author, when=self._clock(),
+                              ignore_case=self.options.ignore_case)
+        return data, f"{_stem(self.a_name)} vs {_stem(self.b_name)} tracked.docx"
 
     def pdf(self, render_set: str = "Standard", change_bars: bool = True, report: str = "last",
             changed_only: bool = False) -> tuple[bytes, str]:
