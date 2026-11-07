@@ -90,8 +90,19 @@ class PlacedComment:
     y: float                   # bubble top (after packing)
     w: float                   # column width
     bubble: Bubble
-    anchor_x: float            # body x of the anchor (connector start)
+    anchor_x: float            # body x of the anchor (connector start): where the commented text begins
     anchor_y: float            # body baseline of the anchor line
+    lead_y: float | None = None    # bottom of the anchor line: the connector's leg runs along it to the column
+
+
+@dataclass
+class CommentMark:
+    """The faint tint behind the text a comment is attached to, one per laid-out line it covers."""
+    x: float
+    y: float                   # the line's top
+    w: float
+    h: float                   # the line's height
+    state: str                 # the comment's state, which picks the tint's colour (as its bubble)
 
 
 @dataclass
@@ -107,6 +118,7 @@ class Page:
     lines: list[PlacedLine] = field(default_factory=list)
     table_rows: list[TableRowBox] = field(default_factory=list)
     comments: list = field(default_factory=list)   # PlacedComment, the bubbles in the right column
+    comment_marks: list = field(default_factory=list)   # CommentMark, the tinted commented text
     label: str = ""           # the page's Word page number, formatted (what its PAGE fields show);
                               # not serialised by Layout.to_dict: it is chrome, not page content
 
@@ -173,6 +185,9 @@ class Layout:
                                          "cid": pc.bubble.cid, "state": pc.bubble.state,
                                          "header": pc.bubble.header, "depth": pc.bubble.depth,
                                          "lines": [line(ln) for ln in pc.bubble.lines]}
-                                        for pc in p.comments]} if p.comments else {})}
+                                        for pc in p.comments]} if p.comments else {}),
+                       **({"comment_marks": [{"x": r(m.x), "y": r(m.y), "w": r(m.w), "h": r(m.h),
+                                              "state": m.state} for m in p.comment_marks]}
+                          if p.comment_marks else {})}
                       for p in self.pages],
         }

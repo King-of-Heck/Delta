@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime
 
+from ..layout.comments import COLUMN_GAP
 from ..layout.pages import FontRef, GlyphRun, Layout, Page, PlacedLine, TableRowBox
 from .decor import decorations, run_effects
 from .rendersets import RenderSet
@@ -23,7 +24,7 @@ TINT = 0.15           # how much of the category colour shows in a side pane's t
 
 def tint(color: str) -> str:
     """The category colour mixed TINT into white, 6-hex: the fill behind a side pane's changed text."""
-    return "".join(f"{round(255 - (255 - int(color[i:i + 2], 16)) * TINT):02x}" for i in (0, 2, 4))
+    return _mix(color, TINT)
 
 
 @dataclass
@@ -144,9 +145,22 @@ MARKS_MODE = {"original": "del", "modified": "ins"}
 COMMENT_STATE_CAT = {"added": "ins", "removed": "del", "edited": None, "unchanged": None}
 BUBBLE_BORDER = 0.5
 CONNECTOR_W = 0.5
-BRACKET_W = 0.75
-BRACKET_LEN = 4.0
 NEUTRAL = "888888"
+MARK_NEUTRAL = "ececec"    # the tint for an edited / unchanged comment (no category colour)
+LEAD_FADE = 0.45           # how much of the bubble's edge colour the connector keeps (the rest is white)
+
+
+def _mix(color: str, amount: float) -> str:
+    """`color` mixed `amount` into white, 6-hex."""
+    return "".join(f"{round(255 - (255 - int(color[i:i + 2], 16)) * amount):02x}" for i in (0, 2, 4))
+
+
+def draw_comment_marks(page: Page, rs: RenderSet, painter) -> None:
+    """The faint tint behind each comment's anchored text, drawn under the body text."""
+    for m in page.comment_marks:
+        cat = COMMENT_STATE_CAT.get(m.state)
+        color = tint(rs.category(cat, False).color) if cat else MARK_NEUTRAL   # the bubble's own fill
+        painter.box(m.x, m.y, m.w, m.h, color, role="cmark")
 
 
 def draw_comments(page: Page, fonts: dict[str, FontRef], rs: RenderSet, painter) -> None:
@@ -166,10 +180,16 @@ def draw_comments(page: Page, fonts: dict[str, FontRef], rs: RenderSet, painter)
         for (x1, y1, x3, y3) in ((pc.x, pc.y, x2, pc.y), (pc.x, y2, x2, y2),
                                   (pc.x, pc.y, pc.x, y2), (x2, pc.y, x2, y2)):
             painter.line(x1, y1, x3, y3, BUBBLE_BORDER, edge)
-        # connector from the anchor to the bubble's left edge
-        painter.line(pc.anchor_x, pc.anchor_y, pc.x, pc.y + b.height / 2, CONNECTOR_W, edge)
-        # anchor bracket at the anchored body range (the first cut brackets the anchor point only)
-        painter.rule(pc.anchor_x, pc.anchor_x + BRACKET_LEN, pc.anchor_y + 1, BRACKET_W, edge)
+        # a faint connector: a dotted leg under the anchor line from the end of the commented text
+        # out to the column gap, then a short line to the bubble's left edge
+        lead = _mix(edge, LEAD_FADE)
+        mid = pc.y + min(b.height / 2, 8.0)
+        if pc.lead_y is not None:
+            elbow = pc.x - COLUMN_GAP / 2
+            painter.rule(pc.anchor_x, elbow, pc.lead_y, CONNECTOR_W, lead, dotted=True)
+            painter.line(elbow, pc.lead_y, pc.x, mid, CONNECTOR_W, lead)
+        else:
+            painter.line(pc.anchor_x, pc.anchor_y, pc.x, mid, CONNECTOR_W, lead)
         # header + text lines: translate from the bubble's own origin to its packed position
         for ln in b.lines:
             moved = replace(ln, top=pc.y + ln.top, baseline=pc.y + ln.baseline,
@@ -186,6 +206,8 @@ def draw_page(page: Page, fonts: dict[str, FontRef], rs: RenderSet, opts: PdfOpt
             painter.line(q.x1, q.y1, q.x2, q.y2, q.width, q.color)
     plain = side != "blackline"
     marks_mode = MARKS_MODE.get(side) if (plain and opts.marks) else None
+    if not plain:
+        draw_comment_marks(page, rs, painter)
     for ln in page.lines:
         draw_runs(ln, ln.marker, fonts, rs, painter, plain, marks_mode)
         draw_runs(ln, ln.runs, fonts, rs, painter, plain, marks_mode)

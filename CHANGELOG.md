@@ -28,6 +28,9 @@
 - Two text boxes under the drop cards compare pasted text at once, as you type: each line is a
   paragraph, the redline shows under the boxes with its count, and Copy redline puts it on the
   clipboard as struck and underlined text for Word or Outlook. They are on the start screen only.
+- A comment's words are tinted in the redline, in its bubble's colour, and a faint dotted line runs
+  from the end of those words to its bubble, so each comment shows which text it is about. A
+  comment on a point rather than a range starts its line at that point. The same in the PDF.
 
 ## v2.12.5 — Newer document as Modified (2026-10-28)
 

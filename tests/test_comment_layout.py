@@ -120,3 +120,65 @@ def test_done_comment_bubble_header_starts_with_the_resolved_marker():
     assert len(placed) == 2
     assert placed[1].bubble.header.startswith("[resolved] ")
     assert not placed[2].bubble.header.startswith("[resolved] ")
+
+
+# -- the anchored text is tinted and the connector starts at it --------------------------------
+
+def _marks(lay):
+    return [(pg, m) for pg in lay.pages for m in pg.comment_marks]
+
+
+def test_a_ranged_comment_tints_exactly_its_words_and_the_connector_leaves_its_end():
+    b = _doc(PR(R("The ") + CRANGE("0", "fox") + R(" jumps.")),
+             comments=[{"id": "0", "author": "Ada", "initials": "AL", "paras": [("p1", "note")]}])
+    a = _doc(P("The fox jumps."))
+    lay = layout(compare(a, b), OPTS())
+    marks = _marks(lay)
+    assert len(marks) == 1
+    pg, m = marks[0]
+    line = next(ln for ln in pg.lines if ln.stream == "body" and ln.row_index == 0)
+    cw = FakeResolver().face("x").width("x", line.runs[0].size)
+    assert abs(m.x - (line.runs[0].x + 4 * cw)) < 1e-6         # after "The "
+    assert abs(m.w - 3 * cw) < 1e-6                            # "fox"
+    assert m.y == line.top and m.h == line.height
+    assert m.state == "added"
+    pc = pg.comments[0]
+    assert pc.anchor_x == m.x + m.w and pc.anchor_y == line.baseline   # the line leaves the tint's end
+    assert pc.lead_y == line.top + line.height                 # the leg runs under the anchor line
+
+
+def test_a_comment_over_two_paragraphs_tints_both():
+    b = _doc(PR(R("One ") + '<w:commentRangeStart w:id="0"/>' + R("two."))
+             + PR(R("Three") + '<w:commentRangeEnd w:id="0"/>' + R(" four.")),
+             comments=[{"id": "0", "author": "Ada", "initials": "AL", "paras": [("p1", "note")]}])
+    a = _doc(P("One two.") + P("Three four."))
+    lay = layout(compare(a, b), OPTS())
+    marks = [m for _pg, m in _marks(lay)]
+    assert len(marks) == 2
+    size = next(ln for ln in lay.pages[0].lines if ln.stream == "body").runs[0].size
+    cw = FakeResolver().face("x").width("x", size)
+    assert abs(marks[0].w - 4 * cw) < 1e-6 and abs(marks[1].w - 5 * cw) < 1e-6
+    assert marks[0].y < marks[1].y
+
+
+def test_a_point_comment_tints_nothing_but_points_at_its_place():
+    from delta.testing.makedocx import CREF
+    b = _doc(PR(R("The fox") + CREF("0") + R(" jumps.")),
+             comments=[{"id": "0", "author": "Ada", "initials": "AL", "paras": [("p1", "note")]}])
+    a = _doc(P("The fox jumps."))
+    lay = layout(compare(a, b), OPTS())
+    assert _marks(lay) == []
+    pc = lay.pages[0].comments[0]
+    line = next(ln for ln in lay.pages[0].lines if ln.stream == "body")
+    cw = FakeResolver().face("x").width("x", line.runs[0].size)
+    assert abs(pc.anchor_x - (line.runs[0].x + 7 * cw)) < 1e-6   # after "The fox"
+
+
+def test_the_blackline_draws_the_tint_and_a_dotted_leg():
+    from delta.viewer.svg import render_pages
+    b = _doc(PR(R("The ") + CRANGE("0", "fox") + R(" jumps.")),
+             comments=[{"id": "0", "author": "Ada", "initials": "AL", "paras": [("p1", "note")]}])
+    a = _doc(P("The fox jumps."))
+    lay = layout(compare(a, b), OPTS())
+    svg = "".join(render_pages(lay))
+    assert 'class="cmark"' in svg and "stroke-dasharray" in svg

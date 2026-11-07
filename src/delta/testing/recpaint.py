@@ -25,7 +25,7 @@ class RecordingPainter:
     def line(self, x1, y1, x2, y2, width, color):
         self.ops.append(("line", _r(x1), _r(y1), _r(x2), _r(y2), _r(width), color))
 
-    def box(self, x, y, w, h, color):
+    def box(self, x, y, w, h, color, role=None):
         self.ops.append(("box", _r(x), _r(y), _r(w), _r(h), color))
 
     def of(self, kind: str) -> list[tuple]:

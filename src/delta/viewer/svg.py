@@ -94,8 +94,8 @@ class SvgPainter:
         self._pages[-1].append(f'<line x1="{_n(x1)}" y1="{_n(y1)}" x2="{_n(x2)}" y2="{_n(y2)}" '
                                f'stroke="#{color}" stroke-width="{_n(width)}"/>')
 
-    def box(self, x: float, y: float, w: float, h: float, color: str) -> None:
-        self._pages[-1].append(f'<rect class="tint" x="{_n(x)}" y="{_n(y)}" width="{_n(w)}" height="{_n(h)}" '
+    def box(self, x: float, y: float, w: float, h: float, color: str, role: str | None = None) -> None:
+        self._pages[-1].append(f'<rect class="{role or "tint"}" x="{_n(x)}" y="{_n(y)}" width="{_n(w)}" height="{_n(h)}" '
                                f'fill="#{color}"/>')
 
     # -- output -----------------------------------------------------------------------------

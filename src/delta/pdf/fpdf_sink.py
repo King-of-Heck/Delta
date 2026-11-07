@@ -80,7 +80,7 @@ class FpdfPainter:
         p.set_line_width(width)
         p.line(x1, y1, x2, y2)
 
-    def box(self, x: float, y: float, w: float, h: float, color: str) -> None:
+    def box(self, x: float, y: float, w: float, h: float, color: str, role: str | None = None) -> None:
         p = self.pdf
         p.set_fill_color(self._color(color))
         p.rect(x, y, w, h, style="F")

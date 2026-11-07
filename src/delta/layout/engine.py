@@ -328,7 +328,7 @@ def _layout(cmp: Comparison, opts: LayoutOptions | None, total: int | None) -> t
     # the options as requested (opts.side names the side); the narrowed run options are not stored
     lay = Layout(pages, refs, opts)
     if bubbles is not None:
-        place_bubbles(lay, cmp, bubbles)
+        place_bubbles(lay, cmp, bubbles, faces)
     return lay, flags
 
 
