@@ -2,4 +2,4 @@ import delta
 
 
 def test_version():
-    assert delta.__version__ == "2.13.0"
+    assert delta.__version__ == "2.13.1"

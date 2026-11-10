@@ -1,5 +1,14 @@
 # Delta changelog
 
+## v2.13.1 — Open in Outlook (2026-11-10)
+
+- The pasted-text redline has an Open in Outlook button beside Copy redline. It opens the redline
+  as a new email, red deletions struck through and blue insertions underlined, ready to address
+  and send. Copy redline lost its strikethrough and colours wherever Word or Outlook is set to
+  paste from other programs with Merge Formatting (only the underline survived); opening the
+  email involves no paste, so that setting does not apply. Copy it from that email into a reply
+  if needed. Copy redline is unchanged and still works where pasting keeps source formatting.
+
 ## v2.13.0 — Word with tracked changes (2026-11-10)
 
 - A Word document can be compared with a PDF, in either order, on wording and numbering only:
