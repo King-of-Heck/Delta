@@ -2,13 +2,13 @@
  "bench": {
   "a": 2,
   "b": 3,
-  "digest": "8cce632040c356e2",
+  "digest": "eee8571a86605b3d",
   "redline": 3
  },
  "big200": {
   "a": 5,
   "b": 5,
-  "digest": "fd36daad6096c4e3",
+  "digest": "18d38ec2535900cb",
   "redline": 5
  },
  "c4": {
@@ -26,7 +26,7 @@
  "fixture": {
   "a": 1,
   "b": 1,
-  "digest": "b55ed66dd7705f72",
+  "digest": "1339af5dc58e347c",
   "redline": 1
  },
  "gen-comments": {
@@ -38,7 +38,7 @@
  "gen-dense": {
   "a": 1,
   "b": 1,
-  "digest": "3f6e4282d40cbfd3",
+  "digest": "741e86494cd090c0",
   "redline": 1
  },
  "gen-empty": {
@@ -50,19 +50,19 @@
  "gen-fmt": {
   "a": 1,
   "b": 1,
-  "digest": "6d0e6e02b108b2ec",
+  "digest": "9f99360b22ef1943",
   "redline": 1
  },
  "gen-grid": {
   "a": 1,
   "b": 1,
-  "digest": "30cc43dd02f44837",
+  "digest": "42dc006a4933f181",
   "redline": 1
  },
  "gen-hf": {
   "a": 8,
   "b": 8,
-  "digest": "46d719b26b4b15e6",
+  "digest": "9d7842337ef1aae5",
   "redline": 8
  },
  "gen-latin1": {
@@ -86,25 +86,25 @@
  "gen-notes": {
   "a": 1,
   "b": 1,
-  "digest": "77e4fce4e57967c0",
+  "digest": "8a764ccb9a90b336",
   "redline": 1
  },
  "gen-punct": {
   "a": 1,
   "b": 1,
-  "digest": "a4f9c10692f87938",
+  "digest": "e2a3d181478c9b76",
   "redline": 1
  },
  "gen-schedule": {
   "a": 1,
   "b": 1,
-  "digest": "9645a4a39d6bc9f2",
+  "digest": "fac7209834f8d4bf",
   "redline": 1
  },
  "gen-table": {
   "a": 1,
   "b": 1,
-  "digest": "84103bbeb3f2e1ea",
+  "digest": "7616cc29b6f1267a",
   "redline": 1
  },
  "pages": {
@@ -122,7 +122,7 @@
  "spacing": {
   "a": 2,
   "b": 2,
-  "digest": "d1dd5b89f8702c6c",
+  "digest": "8abf607ef84e4d08",
   "redline": 2
  }
 }

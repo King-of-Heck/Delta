@@ -700,9 +700,9 @@ def test_an_insertion_with_context_both_sides_bridges_a_deletion():
             {"m": "eq", "t": " ", "cid": None}, {"m": "del", "t": "OPG", "cid": 2},
             {"m": "ins", "t": "where applicableOPG ", "cid": 1}, {"m": "eq", "t": "engaged in", "cid": None}]
     en = _entry(1, "insertion", segs)
-    assert _change_text(en, 40) == ('During the term<u class="ins">,</u> <s class="del">OPG</s>'
+    assert _change_text(en, 40) == ('During the term<u class="ins">,</u> <s class="del">OPG</s> '
                                     '<u class="ins">where applicableOPG </u>engaged in')
-    assert _change_text(en, 6) == ('…e term<u class="ins">,</u> <s class="del">OPG</s>'
+    assert _change_text(en, 6) == ('…e term<u class="ins">,</u> <s class="del">OPG</s> '
                                    '<u class="ins">where applicableOPG </u>engage…')
 
 
@@ -828,3 +828,13 @@ def test_the_text_buttons_copy_and_open_in_outlook():
         assert f'id="{id_}"' in html, id_
     assert "textCopyAny" not in html
     assert '"/api/mail"' in _read("textcompare.js")
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
+def test_a_change_list_row_holding_a_replacement_keeps_the_words_apart():
+    en = _entry(1, "insertion", [{"m": "eq", "t": "this is ", "cid": None}, {"m": "del", "t": "not", "cid": 1},
+                                 {"m": "ins", "t": "very", "cid": 1}, {"m": "eq", "t": " interesting", "cid": None}])
+    assert _change_text(en, 40) == 'this is <s class="del">not</s> <u class="ins">very</u> interesting'
+    en = _entry(1, "insertion", [{"m": "eq", "t": "(", "cid": None}, {"m": "del", "t": "not", "cid": 1},
+                                 {"m": "ins", "t": "very", "cid": 1}, {"m": "eq", "t": ")", "cid": None}])
+    assert _change_text(en, 40) == '(<s class="del">not</s><u class="ins">very</u>)'

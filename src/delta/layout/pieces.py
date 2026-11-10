@@ -137,13 +137,29 @@ def _slice(unit: Unit, s: int, e: int, mode: str, ranges, cid, refs=(), cmp: Com
     return out
 
 
+def _needs_gap(segs, k: int, opts: LayoutOptions) -> bool:
+    """A word replaced by another comes as a deletion and an insertion side by side ("notvery").
+    When both are drawn and the words around them are spaced, a plain space goes between them,
+    as between a renumbered list's old and new number: "~~not~~ very". It is in neither document
+    (each keeps its one space), so it is drawn only: unmarked and with no change number."""
+    if opts.side != "blackline" or not (opts.show_deletions and opts.show_insertions) or k + 1 >= len(segs):
+        return False
+    a, b = segs[k], segs[k + 1]
+    if {a.m, b.m} != {"del", "ins"} or not a.t or not b.t or a.t[-1].isspace() or b.t[0].isspace():
+        return False
+    before = segs[k - 1].t if k > 0 and segs[k - 1].m == "eq" else ""
+    after = segs[k + 2].t if k + 2 < len(segs) and segs[k + 2].m == "eq" else ""
+    return before[-1:].isspace() or after[:1].isspace()
+
+
 def row_pieces(cmp: Comparison, row: Row, opts: LayoutOptions) -> list[Piece]:
     ou = cmp.a_units[row.oi] if row.oi is not None else None
     ru = cmp.b_units[row.ni] if row.ni is not None else None
     ranges = row.fmt_ranges if (row.fmt_changed and opts.show_formatting) else []
     oa = ob = 0
     out: list[Piece] = []
-    for seg in row.segments:
+    segs = row.segments
+    for k, seg in enumerate(segs):
         n = len(seg.t)
         if seg.m == "del":
             unit, start, oa, side = ou, oa, oa + n, "a"
@@ -167,6 +183,9 @@ def row_pieces(cmp: Comparison, row: Row, opts: LayoutOptions) -> list[Piece]:
         if seg.m == "ins" and not opts.show_insertions:
             continue
         out.extend(_slice(unit, start, start + n, seg.m, ranges if seg.m == "eq" else [], seg.cid, refs, cmp))
+        if out and _needs_gap(segs, k, opts):
+            p = out[-1]
+            out.append(Piece(" ", "eq", p.bold, p.italic, False, p.font, p.size, p.color, caps=p.caps))
     lead_unit = ou if (opts.side == "original" and ou is not None) else (ru or ou)
     if lead_unit is not None and lead_unit.lead_tabs and out:
         out.insert(0, Piece("", out[0].mode, tab=lead_unit.lead_tabs))

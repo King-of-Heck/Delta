@@ -14,7 +14,8 @@ def _cmp(body_a, body_b):
 
 
 def _text(pieces, modes):
-    return "".join(p.text for p in pieces if p.mode in modes)
+    # the plain space drawn between a replaced word and its replacement is in neither text
+    return "".join(p.text for p in pieces if p.mode in modes).replace("  ", " ")
 
 
 def test_pieces_reassemble_both_sides_of_a_changed_row():
@@ -188,3 +189,38 @@ def test_field_run_is_its_own_piece_carrying_the_field():
     c = compare(d, d)
     ps = row_pieces(c, c.rows[0], LayoutOptions())
     assert [(p.text, p.field) for p in ps] == [("Page ", None), ("{PAGE}", "PAGE"), (" end", None)]
+
+
+def _drawn(pieces):
+    return [(p.mode, p.text) for p in pieces]
+
+
+def test_a_replaced_word_is_kept_apart_from_its_replacement_by_a_plain_space():
+    c = _cmp(P("this is not interesting"), P("this is very interesting"))
+    (row,) = c.rows
+    assert _drawn(row_pieces(c, row, LayoutOptions())) == [
+        ("eq", "this is "), ("del", "not"), ("eq", " "), ("ins", "very"), ("eq", " interesting")]
+    c = _cmp(P("this is not."), P("this is very."))
+    (row,) = c.rows
+    assert _drawn(row_pieces(c, row, LayoutOptions())) == [
+        ("eq", "this is "), ("del", "not"), ("eq", " "), ("ins", "very"), ("eq", ".")]
+
+
+def test_the_plain_space_takes_the_formatting_of_the_word_before_it_and_no_change_number():
+    c = _cmp(PR(R("this is ") + R("not", "<w:b/>") + R(" interesting")),
+             PR(R("this is ") + R("very", "<w:b/>") + R(" interesting")))
+    (row,) = c.rows
+    gap = row_pieces(c, row, LayoutOptions())[2]
+    assert (gap.mode, gap.text, gap.bold, gap.cid) == ("eq", " ", True, None)
+
+
+def test_no_plain_space_where_one_side_is_hidden_or_the_words_touch_punctuation():
+    c = _cmp(P("this is not interesting"), P("this is very interesting"))
+    (row,) = c.rows
+    assert _drawn(row_pieces(c, row, LayoutOptions(show_deletions=False))) == [
+        ("eq", "this is "), ("ins", "very"), ("eq", " interesting")]
+    assert _drawn(row_pieces(c, row, LayoutOptions(side="modified", show_deletions=False))) == [
+        ("eq", "this is "), ("ins", "very"), ("eq", " interesting")]
+    c = _cmp(P("(not)"), P("(very)"))
+    (row,) = c.rows
+    assert ("eq", " ") not in _drawn(row_pieces(c, row, LayoutOptions()))
