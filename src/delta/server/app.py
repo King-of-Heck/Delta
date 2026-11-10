@@ -20,7 +20,7 @@ from .. import __version__
 from ..docx.package import Package, saved_date
 from ..docx.revisions import count_revisions
 from ..reader import kind_of
-from ..textread import TEXT_MAX_BYTES, compare_texts
+from ..textread import TEXT_MAX_BYTES, compare_texts, redline_email
 from .session import BadRequest, NoComparison, Session, check_render, parse_options, parse_sides
 from .launch import open_viewer
 from ..worker import Worker
@@ -273,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise _Bad(404, "not found")
             route = path[len("/api/"):]
             allowed = {"state": "GET", "pages": "GET", "pdf": "GET", "docx": "GET", "compare": "POST", "layout": "POST",
-                       "inspect": "POST", "text": "POST", "progress": "GET", "ping": "POST", "quit": "POST"}.get(route)
+                       "inspect": "POST", "text": "POST", "mail": "POST", "progress": "GET", "ping": "POST", "quit": "POST"}.get(route)
             if allowed is None:
                 raise _Bad(404, "not found")
             if allowed != method:
@@ -367,7 +367,36 @@ class Handler(BaseHTTPRequestHandler):
     def _api_text(self, session, query):
         """Two pasted texts compared at once: rows and counts only, no layout. Touches no session
         state and never takes the session lock, so a live text compare cannot stall a document one."""
-        body = self._body()
+        a, b, options = self._texts(self._body())
+        self._json(compare_texts(a, b, ignore_case=options.ignore_case))
+
+    def _api_mail(self, session, query):
+        """The two pasted texts' redline written as an unsent email and opened, so Outlook shows it
+        as a new message with its formatting (no paste, so no paste setting can strip it). The
+        files go in one folder under TEMP; ones over a day old are cleared on each write."""
+        a, b, options = self._texts(self._body())
+        rows = compare_texts(a, b, ignore_case=options.ignore_case)["rows"]
+        folder = self.server.mail_dir
+        os.makedirs(folder, exist_ok=True)
+        now = time.time()
+        for old in os.listdir(folder):
+            p = os.path.join(folder, old)
+            try:
+                if old.endswith(".eml") and now - os.path.getmtime(p) > 86400:
+                    os.remove(p)
+            except OSError:
+                pass
+        path = os.path.join(folder, time.strftime("Redline %Y-%m-%d %H%M%S", time.localtime(now))
+                            + f" {int(now * 1000) % 1000:03d}.eml")
+        with open(path, "wb") as f:
+            f.write(redline_email(rows))
+        try:
+            self.server.opener(path)
+        except OSError as e:
+            raise _Bad(500, f"could not open the email ({e.strerror or e})") from None
+        self._json({"ok": True, "path": path})
+
+    def _texts(self, body: dict):
         a, b = body.get("a"), body.get("b")
         if not isinstance(a, str) or not isinstance(b, str):
             raise _Bad(400, "a and b must be text")
@@ -378,8 +407,7 @@ class Handler(BaseHTTPRequestHandler):
             b.encode("utf-8")
         except UnicodeEncodeError:                  # a lone UTF-16 surrogate that came through JSON
             raise _Bad(400, "the text contains a broken character") from None
-        options = parse_options(body.get("options", {}))
-        self._json(compare_texts(a, b, ignore_case=options.ignore_case))
+        return a, b, parse_options(body.get("options", {}))
 
     def _api_progress(self, session, query):
         """How far the PDF being read has got. Deliberately NOT under the session lock: the
@@ -446,7 +474,13 @@ def make_server(session: Session, host: str = HOST, port: int = 0, verbose: bool
     server.hidden = False
     server.closing = False
     server.log = None
+    server.mail_dir = os.path.join(os.environ.get("TEMP") or os.path.expanduser("~"), "Delta", "mail")
+    server.opener = getattr(os, "startfile", None) or _no_opener
     return server
+
+
+def _no_opener(path: str) -> None:
+    raise OSError(0, "opening a file is only supported on Windows")
 
 
 def _say(server, line: str) -> None:

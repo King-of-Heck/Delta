@@ -955,3 +955,39 @@ def test_word_export_download(srv):
 
 def test_word_export_before_a_comparison_is_409(srv):
     assert _req(srv.url + "api/docx")[0] == 409
+
+
+def test_mail_writes_an_unsent_email_and_opens_it(srv, tmp_path):
+    opened = []
+    srv.server.mail_dir = str(tmp_path / "mail")
+    srv.server.opener = opened.append
+    old = tmp_path / "mail" / "old.eml"
+    old.parent.mkdir()
+    old.write_bytes(b"x")
+    os.utime(old, (time.time() - 2 * 86400,) * 2)
+    status, d = _json(srv.url + "api/mail", "POST", {"a": "The fee is 10 days.", "b": "The fee is 30 days."})
+    assert status == 200 and opened == [d["path"]] and d["path"].endswith(".eml")
+    assert not old.exists()
+    import email
+    from email import policy
+    msg = email.message_from_bytes(open(d["path"], "rb").read(), policy=policy.default)
+    assert msg["X-Unsent"] == "1" and msg.get_content_type() == "text/html"
+    body = msg.get_content()
+    assert '<s style="color:#ff0000">10</s><u style="color:#0000ff">30</u>' in body
+
+
+def test_mail_says_when_nothing_can_open_it(srv, tmp_path):
+    def refuse(path):
+        raise OSError(1155, "No application is associated with the specified file")
+    srv.server.mail_dir = str(tmp_path)
+    srv.server.opener = refuse
+    status, d = _json(srv.url + "api/mail", "POST", {"a": "x", "b": "y"})
+    assert status == 500 and "could not open the email" in d["error"]
+
+
+def test_mail_refuses_bad_input_and_cross_origin(srv, tmp_path):
+    srv.server.mail_dir = str(tmp_path)
+    srv.server.opener = lambda p: None
+    assert _json(srv.url + "api/mail", "POST", {"a": "x"}) == (400, {"error": "a and b must be text"})
+    assert _json(srv.url + "api/mail")[0] == 405
+    assert _post_with_headers(srv.url + "api/mail", {"Origin": "http://evil.example"})[0] == 403

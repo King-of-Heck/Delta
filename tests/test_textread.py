@@ -63,3 +63,9 @@ def test_pasted_text_counts_as_the_same_word_document_does():
 
 def test_the_cap_is_200_kb():
     assert TEXT_MAX_BYTES == 200 * 1024
+
+
+def test_redline_html_escapes_and_marks():
+    from delta.textread import redline_html
+    rows = [{"segments": [{"m": "eq", "t": "a<b "}, {"m": "del", "t": "x"}, {"m": "ins", "t": "y"}]}]
+    assert redline_html(rows) == '<p>a&lt;b <s style="color:#ff0000">x</s><u style="color:#0000ff">y</u></p>'

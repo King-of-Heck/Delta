@@ -163,6 +163,7 @@ button:disabled { opacity: .5; cursor: default; }
 .sources .textresult { margin-top: 12px; padding: 12px 16px; background: #fff; border-radius: 8px; }
 .sources .textbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .sources .textbar .count { color: var(--muted); }
+.sources .textbar .textactions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .sources .textbar .count.error { color: var(--del); }
 .sources .redline p { margin: 0 0 8px; white-space: pre-wrap; }
 .sources .redline u { text-decoration: underline double; }

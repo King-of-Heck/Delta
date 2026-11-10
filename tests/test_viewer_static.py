@@ -820,3 +820,11 @@ def test_save_word_button_and_author_box():
     # only for two Word documents: a PDF pair or a Word / PDF pair has no Word XML to mark
     assert 'source.kind === "docx"' in _function_body(js, "show")
     assert '$("docx").addEventListener("click", saveDocx)' in js
+
+
+def test_the_text_buttons_copy_and_open_in_outlook():
+    html = _read("index.html")
+    for id_ in ("textCopy", "textMail"):
+        assert f'id="{id_}"' in html, id_
+    assert "textCopyAny" not in html
+    assert '"/api/mail"' in _read("textcompare.js")

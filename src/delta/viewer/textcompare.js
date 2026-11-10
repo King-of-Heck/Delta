@@ -28,6 +28,11 @@ export function initTextCompare() {
   });
   $("optIgnoreCase").addEventListener("change", schedule);
   $("textCopy").addEventListener("click", copyRedline);
+  $("textMail").addEventListener("click", openInOutlook);
+}
+
+function enable(on) {
+  for (const id of ["textCopy", "textMail"]) $(id).disabled = !on;
 }
 
 function compact() {
@@ -70,7 +75,7 @@ async function run() {
     $("textCount").textContent = countLine(d.summary);
     $("textCount").classList.remove("error");
     $("textRedline").innerHTML = redlineHtml(d.rows);      // every piece of text is escaped by redlineHtml
-    $("textCopy").disabled = false;
+    enable(true);
     $("textResult").hidden = false;
   } catch (e) {
     if (n !== seq) return;
@@ -86,8 +91,17 @@ function showError(text) {
   $("textCount").textContent = text;
   $("textCount").classList.add("error");
   $("textRedline").innerHTML = "";
-  $("textCopy").disabled = true;
+  enable(false);
   $("textResult").hidden = false;
+}
+
+const LABELS = { textCopy: "Copy redline", textMail: "Open in Outlook" };
+
+function say(btn, text) {
+  for (const id of Object.keys(LABELS)) $(id).textContent = LABELS[id];
+  btn.textContent = text;
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => { btn.textContent = LABELS[btn.id]; }, 1500);
 }
 
 async function copyRedline() {
@@ -98,10 +112,23 @@ async function copyRedline() {
       "text/html": new Blob([redlineHtml(rows)], { type: "text/html" }),
       "text/plain": new Blob([redlineText(rows)], { type: "text/plain" }),
     })]);
-    btn.textContent = "Copied";
+    say(btn, "Copied");
   } catch (e) {
-    btn.textContent = "Copy failed";
+    say(btn, "Copy failed");
   }
-  clearTimeout(copyTimer);
-  copyTimer = setTimeout(() => { btn.textContent = "Copy redline"; }, 1500);
+}
+
+// The server writes the redline as an unsent email (.eml) and opens it: Outlook shows it as a new
+// message, formatting and all, with no paste in between.
+async function openInOutlook() {
+  if (!rows) return;
+  const btn = $("textMail");
+  try {
+    await api("/api/mail", { a: $("textA").value, b: $("textB").value,
+                             options: { ignore_case: $("optIgnoreCase").checked } });
+    say(btn, "Opening…");
+  } catch (e) {
+    say(btn, "Could not open");
+    $("textCount").textContent = e.message;
+  }
 }
