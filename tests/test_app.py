@@ -902,7 +902,7 @@ def test_compare_payload_carries_tracked(srv):
 def test_text_compares_two_pastes_without_touching_the_session(srv):
     status, d = _json(srv.url + "api/text", "POST", {"a": "The fee is 10 days.", "b": "The fee is 30 days."})
     assert status == 200 and d["summary"]["total"] == 2
-    assert [s["m"] for s in d["rows"][0]["segments"]] == ["eq", "del", "ins", "eq"]
+    assert [s["m"] for s in d["rows"][0]["segments"]] == ["eq", "del", "eq", "ins", "eq"]
     assert _json(srv.url + "api/state")[1]["loaded"] is False
 
 
@@ -973,7 +973,7 @@ def test_mail_writes_an_unsent_email_and_opens_it(srv, tmp_path):
     msg = email.message_from_bytes(open(d["path"], "rb").read(), policy=policy.default)
     assert msg["X-Unsent"] == "1" and msg.get_content_type() == "text/html"
     body = msg.get_content()
-    assert '<s style="color:#ff0000">10 </s><u style="color:#0000ff">30 </u>' in body
+    assert '<s style="color:#ff0000">10</s> <u style="color:#0000ff">30</u>' in body
 
 
 def test_mail_says_when_nothing_can_open_it(srv, tmp_path):

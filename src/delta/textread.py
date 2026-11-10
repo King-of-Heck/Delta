@@ -25,29 +25,23 @@ def compare_texts(a: str, b: str, *, ignore_case: bool = False) -> dict:
 
 def _spaced(segs: list[dict]) -> list[dict]:
     """A word replaced by another comes as a deletion and an insertion side by side with no space
-    between them ("notvery"). Give both the space that follows them (or, before punctuation or at
-    the end, the one before them), as a lone deletion or insertion already has: "~~not ~~very"."""
-    segs = [dict(s) for s in segs]
-    i = 0
-    while i + 1 < len(segs):
-        a, b = segs[i], segs[i + 1]
-        if {a["m"], b["m"]} != {"del", "ins"}:
-            i += 1
+    between them ("notvery"). Where the words around them are spaced (a space after them, or before
+    them), put a plain, unmarked space between the two: "~~not~~ very". It is in neither text (each
+    side keeps its own single space), so it is shown only; the deleted and inserted words are not
+    given a space to mark as changed."""
+    out: list[dict] = []
+    for i, s in enumerate(segs):
+        out.append(dict(s))
+        if i + 1 == len(segs):
+            break
+        nxt = segs[i + 1]
+        if {s["m"], nxt["m"]} != {"del", "ins"} or s["t"][-1:].isspace() or nxt["t"][:1].isspace():
             continue
-        after = segs[i + 2] if i + 2 < len(segs) and segs[i + 2]["m"] == "eq" else None
-        before = segs[i - 1] if i > 0 and segs[i - 1]["m"] == "eq" else None
-        if after and after["t"][:1].isspace() and not a["t"][-1:].isspace() and not b["t"][-1:].isspace():
-            n = len(after["t"]) - len(after["t"].lstrip())
-            space, after["t"] = after["t"][:n], after["t"][n:]
-            a["t"] += space
-            b["t"] += space
-        elif before and before["t"][-1:].isspace() and not a["t"][:1].isspace() and not b["t"][:1].isspace():
-            n = len(before["t"]) - len(before["t"].rstrip())
-            space, before["t"] = before["t"][-n:], before["t"][:-n]
-            a["t"] = space + a["t"]
-            b["t"] = space + b["t"]
-        i += 2
-    return [s for s in segs if s["t"]]
+        after = segs[i + 2]["t"] if i + 2 < len(segs) and segs[i + 2]["m"] == "eq" else ""
+        before = segs[i - 1]["t"] if i > 0 and segs[i - 1]["m"] == "eq" else ""
+        if after[:1].isspace() or before[-1:].isspace():
+            out.append({"m": "eq", "t": " "})
+    return out
 
 
 INS_COLOR = "#0000ff"                # the viewer's textredline.js uses the same two colours
