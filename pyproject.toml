@@ -1,6 +1,6 @@
 [project]
 name = "delta"
-version = "2.12.5"
+version = "2.13.0"
 description = "Delta — offline Word (.docx) and PDF redline / compare tool with a paged viewer and PDF output"
 readme = "README.md"
 authors = [

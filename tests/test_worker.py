@@ -76,9 +76,10 @@ def test_only_two_different_pdfs_not_yet_read_go_to_the_worker():
     assert w.submitted == []
     s.load("b.pdf", B, "c.pdf", _pdf("x"))              # b read already too
     assert w.submitted == []
-    s.load("d.pdf", _pdf("d"), "e.pdf", _pdf("e"))
-    assert w.submitted == [_pdf("e")]
-    s.load("e.pdf", _pdf("e"), "d.pdf", _pdf("d"))      # Swap: both cached, nothing read again
+    d, e = _pdf("d"), _pdf("e")                         # made once: each PDF carries its creation time
+    s.load("d.pdf", d, "e.pdf", e)
+    assert w.submitted == [e]
+    s.load("e.pdf", e, "d.pdf", d)                      # Swap: both cached, nothing read again
     assert len(w.submitted) == 1
 
 

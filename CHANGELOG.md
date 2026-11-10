@@ -1,6 +1,6 @@
 # Delta changelog
 
-## Unreleased — Word compared with PDF; Delta keeps running and compares faster; Word with tracked changes
+## v2.13.0 — Word with tracked changes (2026-11-10)
 
 - A Word document can be compared with a PDF, in either order, on wording and numbering only:
   formatting, headers, footers and comments are not compared, and the app and the PDF summary say
