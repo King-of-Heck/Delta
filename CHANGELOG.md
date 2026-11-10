@@ -1,5 +1,12 @@
 # Delta changelog
 
+## v2.13.2 — Spaces in the pasted-text redline (2026-11-10)
+
+- In the pasted-text redline, a word replaced by another no longer runs into it: the space after
+  them goes with both the deleted and the inserted word, so "not" replaced by "very" reads
+  "not very" with "not " struck through, instead of "notvery". Before a full stop or at the end of
+  a line, the space before them is used instead. Copy redline and Open in Outlook show the same.
+
 ## v2.13.1 — Open in Outlook (2026-11-10)
 
 - The pasted-text redline has an Open in Outlook button beside Copy redline. It opens the redline
