@@ -22,7 +22,7 @@ wheels = [
 
 [[package]]
 name = "delta"
-version = "2.13.2"
+version = "2.13.3"
 source = { editable = "." }
 dependencies = [
     { name = "fonttools" },

@@ -1,5 +1,14 @@
 # Delta changelog
 
+## v2.13.3 — Replaced words kept apart (2026-11-10)
+
+- Where a word is replaced by another, the redline puts a plain, unmarked space between the
+  struck word and the new one: "not" replaced by "very" reads "~~not~~ very", not "notvery". The
+  space is not shown as added or removed; it is drawn only, in the pasted-text redline (and Copy
+  redline and Open in Outlook), on the pages, in the saved PDF and in the change list. 2.13.2's
+  struck and underlined space is gone. Change counts and page counts are unchanged. The Word
+  document with tracked changes is unchanged: Word draws its own changes.
+
 ## v2.13.2 — Spaces in the pasted-text redline (2026-11-10)
 
 - In the pasted-text redline, a word replaced by another no longer runs into it: the space after
