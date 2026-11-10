@@ -27,8 +27,8 @@ def test_compare_texts_gives_rows_and_counts():
     d = compare_texts("The fee is 10 days.\nKeep this.", "The fee is 30 days.\nKeep this.\nNew line.")
     assert d["summary"]["total"] == 3 and d["summary"]["insertions"] == 2 and d["summary"]["deletions"] == 1
     assert d["rows"] == [
-        {"type": "changed", "segments": [{"m": "eq", "t": "The fee is "}, {"m": "del", "t": "10"},
-                                         {"m": "ins", "t": "30"}, {"m": "eq", "t": " days."}]},
+        {"type": "changed", "segments": [{"m": "eq", "t": "The fee is "}, {"m": "del", "t": "10 "},
+                                         {"m": "ins", "t": "30 "}, {"m": "eq", "t": "days."}]},
         {"type": "equal", "segments": [{"m": "eq", "t": "Keep this."}]},
         {"type": "inserted", "segments": [{"m": "ins", "t": "New line."}]},
     ]
@@ -57,8 +57,9 @@ def test_pasted_text_counts_as_the_same_word_document_does():
     want = compare(a_doc, b_doc, count_numbering=False).to_dict()
     got = compare_texts("\n".join(a_lines), "\n".join(b_lines))
     assert got["summary"] == want["summary"]
-    assert [[(s["m"], s["t"]) for s in r["segments"]] for r in got["rows"]] == \
-           [[(s["m"], s["t"]) for s in r["segments"]] for r in want["changes"]]
+    for drop in ("ins", "del"):        # same text both sides; only where the spaces sit differs
+        assert ["".join(s["t"] for s in r["segments"] if s["m"] != drop) for r in got["rows"]] == \
+               ["".join(s["t"] for s in r["segments"] if s["m"] != drop) for r in want["changes"]]
 
 
 def test_the_cap_is_200_kb():
@@ -69,3 +70,27 @@ def test_redline_html_escapes_and_marks():
     from delta.textread import redline_html
     rows = [{"segments": [{"m": "eq", "t": "a<b "}, {"m": "del", "t": "x"}, {"m": "ins", "t": "y"}]}]
     assert redline_html(rows) == '<p>a&lt;b <s style="color:#ff0000">x</s><u style="color:#0000ff">y</u></p>'
+
+
+def _segs(a, b):
+    from delta.textread import compare_texts
+    return [(s["m"], s["t"]) for r in compare_texts(a, b)["rows"] for s in r["segments"]]
+
+
+def test_a_replaced_word_carries_the_space_after_it_on_both_sides():
+    assert _segs("this is not interesting", "this is very interesting") == [
+        ("eq", "this is "), ("del", "not "), ("ins", "very "), ("eq", "interesting")]
+    assert _segs("the fee is 10 days", "the fee is 30 business days") == [
+        ("eq", "the fee is "), ("del", "10 "), ("ins", "30 business "), ("eq", "days")]
+
+
+def test_a_replaced_word_before_punctuation_carries_the_space_before_it():
+    assert _segs("this is not.", "this is very.") == [
+        ("eq", "this is"), ("del", " not"), ("ins", " very"), ("eq", ".")]
+
+
+def test_lone_insertions_and_deletions_are_unchanged():
+    assert _segs("this is not interesting", "this is interesting") == [
+        ("eq", "this is "), ("del", "not "), ("eq", "interesting")]
+    assert _segs("this is interesting", "this is very interesting") == [
+        ("eq", "this is "), ("ins", "very "), ("eq", "interesting")]

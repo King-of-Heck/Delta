@@ -973,7 +973,7 @@ def test_mail_writes_an_unsent_email_and_opens_it(srv, tmp_path):
     msg = email.message_from_bytes(open(d["path"], "rb").read(), policy=policy.default)
     assert msg["X-Unsent"] == "1" and msg.get_content_type() == "text/html"
     body = msg.get_content()
-    assert '<s style="color:#ff0000">10</s><u style="color:#0000ff">30</u>' in body
+    assert '<s style="color:#ff0000">10 </s><u style="color:#0000ff">30 </u>' in body
 
 
 def test_mail_says_when_nothing_can_open_it(srv, tmp_path):
