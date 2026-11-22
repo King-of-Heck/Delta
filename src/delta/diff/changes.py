@@ -77,7 +77,8 @@ def _shown(unit: Unit, a: int, b: int) -> str:
     return text
 
 
-def row_passages(row: Row, row_index: int, first: int, count_numbering: bool) -> list[Passage]:
+def row_passages(row: Row, row_index: int, first: int, count_numbering: bool,
+                 carry: dict | None = None) -> list[Passage]:
     """Numbers the row's passages from `first` and stamps them on the row and its segments
     (spec 14.1, 14.2). The renumbered marker comes first. Then, per side: an inserted passage is
     a maximal stretch of `ins` segments broken only by an equal segment holding a letter or digit,
@@ -86,7 +87,10 @@ def row_passages(row: Row, row_index: int, first: int, count_numbering: bool) ->
     replacement therefore numbers its deletion before its insertion. Punctuation does not break a
     passage because the word diff may match a lone "," or "." on either side of an edit, and which
     one it picks depends on which document is the original: counted as a break, swapping the two
-    documents changed the count."""
+    documents changed the count. `carry` ({"ins": cid | None, "del": cid | None}) holds the
+    passages still open where the row before ended -- a split's pieces, read as the one paragraph
+    they were, so an edit that runs over the cut is one passage, as it is in the mirror merge --
+    and is left holding the ones open at this row's end."""
     out: list[Passage] = []
     n = first - 1
     row.cids = []
@@ -96,8 +100,8 @@ def row_passages(row: Row, row_index: int, first: int, count_numbering: bool) ->
         row.num_cid = n
         row.cids.append(n)
         out.append(Passage(n, "numbering", row_index))
-    open_ins: int | None = None
-    open_del: int | None = None
+    open_ins: int | None = carry.get("ins") if carry else None
+    open_del: int | None = carry.get("del") if carry else None
     segs = row.segments
     for k, s in enumerate(segs):
         if s.m == "eq":
@@ -110,16 +114,20 @@ def row_passages(row: Row, row_index: int, first: int, count_numbering: bool) ->
             if open_ins is None:
                 n += 1
                 open_ins = n
-                row.cids.append(n)
                 out.append(Passage(n, "insertion", row_index))
+            if open_ins not in row.cids:
+                row.cids.append(open_ins)
             s.cid = open_ins
         else:
             if open_del is None:
                 n += 1
                 open_del = n
-                row.cids.append(n)
                 out.append(Passage(n, "deletion", row_index))
+            if open_del not in row.cids:
+                row.cids.append(open_del)
             s.cid = open_del
+    if carry is not None:
+        carry["ins"], carry["del"] = open_ins, open_del
     return out
 
 
@@ -158,6 +166,8 @@ class Comparison:
             n = len(s.t)
             if s.pm:                        # a paragraph mark: drawn, in neither text
                 d["pm"] = True
+            elif s.m == "del" and s.at is not None:   # a split / merge row: says where it stands
+                d["t"] = _shown(self.a_units[s.at[0]], s.at[1], s.at[1] + n)
             elif s.m == "del":
                 d["t"] = _shown(ou, oa, oa + n)
                 oa += n

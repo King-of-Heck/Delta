@@ -176,7 +176,10 @@ def row_pieces(cmp: Comparison, row: Row, opts: LayoutOptions) -> list[Piece]:
                 out.append(Piece(seg.t, seg.m, False, False, False, p.font if p else None, p.size if p else None,
                                  cid=seg.cid))
             continue
-        if seg.m == "del":
+        if seg.m == "del" and seg.at is not None:     # a split / merge row: says where it stands
+            unit, start, side = cmp.a_units[seg.at[0]], seg.at[1], "a"
+            refs = [(o, ref, "a") for o, ref in unit.note_refs]
+        elif seg.m == "del":
             unit, start, oa, side = ou, oa, oa + n, "a"
             refs = [(o, ref, "a") for o, ref in ou.note_refs]
         elif seg.m == "ins":

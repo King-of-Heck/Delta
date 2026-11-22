@@ -91,11 +91,72 @@ def test_an_empty_paragraph_between_the_halves_still_makes_a_split():
     assert [r.join for r in c.rows] == ["split", "split"] and c.summary["total"] == 1
 
 
-def test_halves_that_also_changed_words_are_compared_as_before():
+def test_halves_that_also_changed_words_show_the_mark_and_the_word_edits():
     c = _cmp(P(WHOLE), P("Alpha beta") + P("gamma delta!"))
-    assert all(r.join is None for r in c.rows)
+    assert [(r.type, r.join, r.head) for r in c.rows] == [("changed", "split", True), ("changed", "split", False)]
+    assert _segs(c.rows[0]) == [("eq", "Alpha beta", False), ("ins", PM, True)]
+    assert _segs(c.rows[1]) == [("eq", "gamma delta", False), ("del", ".", False), ("ins", "!", False)]
+    assert c.rows[1].segments[1].at == (0, len("Alpha beta gamma delta"))
+    assert c.summary["total"] == 3 and c.summary["splits"] == 1
+    _rebuilds(c)
     c = _cmp(P(WHOLE), P("Alpha") + P("gamma delta."))
+    assert [r.join for r in c.rows] == ["split", "split"]
+    assert "".join(s.t for r in c.rows for s in r.segments if s.m == "del") .strip() == "beta"
+    _rebuilds(c)
+
+
+def _rebuilds(c):
+    """Each split's rows give back both documents: the original from its shared and deleted text
+    (with the gaps), each piece from its shared and inserted text; each deleted segment's `at`
+    points at its own text."""
+    for r in c.rows:
+        for s in r.segments:
+            if s.m == "del" and not s.pm and r.join:
+                u = c.a_units[s.at[0]]
+                assert u.text[s.at[1]:s.at[1] + len(s.t)] == s.t
+    groups = {}
+    for r in c.rows:
+        if r.join == "split":
+            groups.setdefault(r.oi, []).append(r)
+    for oi, rows in groups.items():
+        orig = "".join("".join(s.t for s in r.segments if s.m in ("eq", "del") and not s.pm) + r.gap for r in rows)
+        assert orig == c.a_units[oi].text
+        for r in rows:
+            assert "".join(s.t for s in r.segments if s.m in ("eq", "ins") and not s.pm) == c.b_units[r.ni].text
+
+
+def test_an_edit_at_the_cut_is_one_passage_both_ways():
+    a, b = P("Name: Name: Title: Title:"), P("Name: Title:") + P("Title:")
+    f, s = _cmp(a, b), _cmp(b, a)
+    assert f.summary["total"] == s.summary["total"]
+
+
+def test_a_new_paragraph_after_an_edited_one_is_not_taken_for_a_piece():
+    old = P("The Contractor shall deliver the goods by the end of May at its own cost.")
+    new = (P("The Contractor shall deliver the goods by the end of June at its own cost.")
+           + P("The Contractor shall deliver the goods at its own cost."))
+    c = _cmp(old, new)
     assert all(r.join is None for r in c.rows)
+
+
+def test_of_two_like_clauses_the_pieces_go_to_the_one_they_were_cut_from():
+    one = "Release of {0}. The {0} releases the {1} from all claims, demands and costs of every kind."
+    a = P(one.format("Buyer", "Seller")) + P(one.format("Seller", "Buyer"))
+    b = (P(one.format("Buyer", "Seller").replace("all", "any"))
+         + P("Release of Seller. The Seller releases the Buyer") + P("from all claims, demands and costs of any kind."))
+    c = _cmp(a, b)
+    assert [(r.join, r.oi, r.ni) for r in c.rows if r.join] == [("split", 1, 1), ("split", 1, 2)]
+    _rebuilds(c)
+    assert c.summary["total"] == _cmp(b, a).summary["total"]
+
+
+def test_a_page_number_between_two_pieces_is_stepped_over():
+    whole = "The warranty runs for twelve months from delivery and covers every defect in the goods."
+    c = _cmp(P(whole), P("The warranty runs for twelve months from") + P("- 2 -")
+             + P("delivery and covers each defect in the goods."))
+    assert [(r.type, r.ni, r.join) for r in c.rows] == [
+        ("changed", 0, "split"), ("inserted", 1, None), ("changed", 2, "split")]
+    _rebuilds(c)
 
 
 def test_halves_that_touch_without_a_space_also_split():
@@ -144,6 +205,21 @@ def test_merge_layouts_original_twice_modified_once_blackline_with_the_struck_ma
     assert [(r.mode, r.cid) for r in runs if r.text == PM] == [("del", 1)]
 
 
+def test_edited_split_layouts_show_the_word_edits_on_the_blackline_only():
+    a, b = P("One two three four. Five six seven eight."), P("One two three four.") + P("Five six nine eight.")
+    c = _cmp(a, b)
+    assert _row_texts(layout(c, LayoutOptions(fonts=FR, side="original"))) == ["One two three four. Five six seven eight."]
+    assert _row_texts(layout(c, LayoutOptions(fonts=FR, side="modified"))) == ["One two three four.", "Five six nine eight."]
+    black = layout(c, LayoutOptions(fonts=FR))
+    runs = [(r.text, r.mode) for pg in black.pages for ln in pg.lines for r in ln.runs if r.mode != "eq"]
+    assert runs == [(PM, "ins"), ("seven", "del"), ("nine", "ins")]
+    m = _cmp(b, a)                                  # the mirror merge: its struck words from each piece
+    black = layout(m, LayoutOptions(fonts=FR))
+    runs = [(r.text, r.mode) for pg in black.pages for ln in pg.lines for r in ln.runs if r.mode != "eq"]
+    assert runs == [(PM, "del"), ("nine", "del"), ("seven", "ins")]
+    assert m.summary["total"] == c.summary["total"] == 3
+
+
 def test_hiding_unchanged_text_keeps_the_row_with_the_mark():
     c = _cmp(P(WHOLE) + P("Kept."), HALVES + P("Kept."))
     L = layout(c, LayoutOptions(fonts=FR, show_equal=False))
@@ -162,6 +238,31 @@ def test_word_export_accepts_to_the_modified_and_rejects_to_the_original(a, b):
     out = export_tracked(_bytes(a), _bytes(b), author="Delta")
     assert _streams(accept_docx(out)) == _streams(_bytes(b))
     assert _streams(reject_docx(out)) == _streams(_bytes(a))
+
+
+EDITED = [(P(WHOLE), P("Alpha beta") + P("gamma delta!")),
+          (P(WHOLE), P("Alpha") + P("gamma delta.")),
+          (P("One two three four. Five six seven eight."), P("One two three four.") + P("Five six nine eight.")),
+          (P("One two three four. Five six seven eight."), P("One new two three four.") + P("") + P("Five six seven eight.")),
+          (P("The warranty runs for twelve months from delivery and covers every defect."),
+           P("The warranty runs for twelve months from") + P("- 2 -") + P("delivery and covers each defect.")),
+          (P("Alpha beta") + P("gamma delta!"), P(WHOLE))]
+
+
+@pytest.mark.parametrize("a, b", EDITED)
+def test_word_export_of_an_edited_split_or_merge_accepts_and_rejects_cleanly(a, b):
+    out = export_tracked(_bytes(a), _bytes(b), author="Delta")
+    assert _streams(accept_docx(out)) == _streams(_bytes(b))
+    assert _streams(reject_docx(out)) == _streams(_bytes(a))
+
+
+def test_word_export_of_an_edited_split_marks_the_words_not_the_paragraphs():
+    out = export_tracked(_bytes(P("One two three four. Five six seven eight.")),
+                         _bytes(P("One two three four.") + P("Five six nine eight.")), author="Delta")
+    root = etree.fromstring(__import__("zipfile").ZipFile(io.BytesIO(out)).read("word/document.xml"))
+    inserted = "".join(t.text or "" for i in root.iter(wq("ins")) for t in i.iter(wq("t")))
+    assert inserted == "nine"
+    assert sorted(t.text for t in root.iter(wq("delText"))) == [" ", "seven"]
 
 
 def test_word_export_of_a_split_marks_only_the_paragraph_mark():
@@ -186,12 +287,15 @@ def test_pasted_text_split_and_join():
     assert [[(s["m"], s["t"]) for s in r["segments"]] for r in d["rows"]] == [
         [("eq", "Alpha beta"), ("del", PM), ("eq", " gamma delta.")]]
     assert d["summary"]["total"] == 1
+    d = compare_texts("One two three four. Five six seven eight.", "One two three four.\nFive six nine eight.")
+    assert [[(s["m"], s["t"]) for s in r["segments"]] for r in d["rows"]] == [
+        [("eq", "One two three four."), ("ins", PM)], [("eq", "Five six "), ("del", "seven"), ("eq", " "), ("ins", "nine"), ("eq", " eight.")]]
 
 
 # ---- Copy (viewer) ----------------------------------------------------------------------------
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
-@pytest.mark.parametrize("a, b", [(P(WHOLE), HALVES), (HALVES, P(WHOLE))])
+@pytest.mark.parametrize("a, b", [(P(WHOLE), HALVES), (HALVES, P(WHOLE))] + EDITED)
 def test_copy_gives_each_documents_own_paragraphs(a, b):
     rows = _cmp(a, b).to_dict()["changes"]
     uri = Path(str(resources.files("delta.viewer").joinpath("copy.js"))).as_uri()

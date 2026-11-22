@@ -7,11 +7,17 @@
   into one show a struck "¶" where each break was, one deletion each. Before, the first part was
   shown deleted and inserted again. The Original pane shows the paragraph as the original has it,
   the Modified pane as the modified has it. An empty paragraph between the parts does not stop it.
-  The words must match exactly (case aside under Ignore case): a part that also changed a word is
-  compared as before. The pasted-text redline, Copy and the change list show the same; the Word
-  document with tracked changes marks the inserted paragraph mark (a join is still marked as the
-  old paragraphs deleted and the new one inserted). Comparing Word with PDF, a Word paragraph with
-  line breaks that the PDF reads as separate lines now counts one change instead of two.
+  The pasted-text redline, Copy and the change list show the same; the Word document with tracked
+  changes marks the inserted paragraph mark (a join is still marked as the old paragraphs deleted
+  and the new one inserted). Comparing Word with PDF, a Word paragraph with line breaks that the
+  PDF reads as separate lines now counts one change instead of two.
+- A split whose parts also had words changed is found too: each part and the whole paragraph must
+  keep at least half their words, in order, and the parts must share more with the paragraph than
+  any one paragraph does, so of two near-identical clauses each keeps its own parts. The redline
+  shows the "¶" and the word changes in each part; an edit running over the break counts once.
+  A short paragraph between the parts (a page number such as "- 2 -" left by a PDF-to-Word
+  conversion) is stepped over and shown inserted where it stands. The Word document with tracked
+  changes marks the word changes in each part as well as the paragraph mark.
 
 ## v2.13.3 — Replaced words kept apart (2026-11-10)
 

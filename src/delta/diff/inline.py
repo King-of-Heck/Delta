@@ -29,6 +29,7 @@ class Seg:
     b: bool = False
     cid: int | None = None      # the passage number of a marked segment (spec 14.2); None on equal text
     pm: bool = False            # a paragraph mark inserted / removed (t is the drawn PM): in neither text
+    at: tuple | None = None     # a split / merge row's deleted text: (original unit index, offset there)
 
 
 PM = "¶"                   # how an inserted or removed paragraph mark is drawn

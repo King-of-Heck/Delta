@@ -76,6 +76,11 @@ def _para_state(cmp: Comparison, para, offset: int, end_offset: int | None) -> t
                 return (False, False)
             if r.type == "deleted":
                 return (True, False)
+            if r.join:                      # a split / merge: each deleted segment says where it stands
+                end = offset + 1 if end_offset is None else end_offset
+                return (any(s.m == "del" and s.at is not None and s.at[0] == u.index
+                            and offset < s.at[1] + len(s.t) and end > s.at[1]
+                            for x in cmp.rows if x.join for s in x.segments), False)
             if r.type == "changed":
                 return (_seg_overlap(r, offset, end_offset, "del"), False)
             return (False, False)

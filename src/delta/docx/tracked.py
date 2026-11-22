@@ -410,6 +410,8 @@ class _Editor:
         rows = self.cmp.rows
         group = [head]
         for r in rows[k + 1:]:
+            if r.join is None and r.type in ("inserted", "deleted"):
+                continue                # a page number stepped over between two pieces: its own row
             if r.join != head.join or r.head:
                 break
             group.append(r)
@@ -425,7 +427,7 @@ class _Editor:
                 if nxt is not y:
                     break
                 between.append(mid)
-            if len(between) == len(ps) - 1:
+            if len(between) == len(ps) - 1 and self.pieces(group, ou):
                 for r, x, mid in zip(group, ps, between):
                     if r.gap:
                         run = x.makeelement(_R, {})
@@ -450,25 +452,41 @@ class _Editor:
         for u in news:
             self.mark_inserted(u.para.xml)
 
+    def pieces(self, group, ou) -> bool:
+        """Each piece of a split edited in place against its own stretch of the Original (a
+        split with its words unchanged has nothing to edit); False when a piece cannot be traced,
+        before anything is changed."""
+        plans, a = [], 0
+        for k, r in enumerate(group):
+            segs = [s for s in r.segments if not s.pm]
+            plan, a1, b = _plan(segs, a)
+            ru = self.cmp.b_units[r.ni]
+            if b != len(ru.text):
+                return False
+            plans.append((ru, plan, (a, a1 + len(r.gap) if k < len(group) - 1 else len(ou.text) + 1)))
+            a = a1 + len(r.gap)
+        if a != len(ou.text) or any(ParaMap.of(u.para.xml, u.text) is None
+                                    for u in [ou] + [ru for ru, plan, _ in plans if any(m != "eq" for m, *_ in plan)]):
+            return False
+        for ru, plan, span in plans:
+            if any(m != "eq" for m, *_ in plan) and not self.edit(ou, ru, plan, span):
+                return False
+        return True
+
     def changed(self, row, ou, ru) -> bool:
         """The word-level edit in place; False when the paragraph cannot be traced (marked whole)."""
+        plan, a, b = _plan(row.segments, 0)
+        if a != len(ou.text) or b != len(ru.text):
+            return False
+        return self.edit(ou, ru, plan)
+
+    def edit(self, ou, ru, plan, span=None) -> bool:
+        """`plan` applied to the Modified paragraph: deleted Original text put back as deleted runs,
+        inserted text marked. `span`: the part of the Original this paragraph holds (a split's
+        piece), outside which the Original's note references are not this paragraph's."""
         ma = ParaMap.of(ou.para.xml, ou.text)
         mb = ParaMap.of(ru.para.xml, ru.text)
         if ma is None or mb is None:
-            return False
-        plan, a, b = [], 0, 0
-        for s in row.segments:
-            n = len(s.t)
-            if s.m == "eq":
-                plan.append(("eq", a, a + n, b, b + n))
-                a, b = a + n, b + n
-            elif s.m == "del":
-                plan.append(("del", a, a + n, b, b))
-                a += n
-            else:
-                plan.append(("ins", a, a, b, b + n))
-                b += n
-        if a != len(ou.text) or b != len(ru.text):
             return False
         mb.split([mb.raw_pos(k) for _, _, _, b0, b1 in plan for k in (b0, b1)])
         for m, a0, a1, b0, _ in plan:
@@ -488,7 +506,7 @@ class _Editor:
                 ru.para.xml.append(d)
             else:
                 at[0].insert(at[1], d)
-        self.note_marks(ou, ru, plan, mb)
+        self.note_marks(ou, ru, plan, mb, span)
         for m, _, _, b0, b1 in plan:
             if m != "ins":
                 continue
@@ -497,11 +515,13 @@ class _Editor:
                     _wrap(r, "ins", self.attrs())
         return True
 
-    def note_marks(self, ou, ru, plan, mb=None) -> None:
+    def note_marks(self, ou, ru, plan, mb=None, span=None) -> None:
         """Note references the text diff cannot see. An Original reference whose note the Modified
         lacks (and that no deleted text brought back) goes in as a deleted reference to a deleted
         copy of the note; a Modified reference to a note new in the Modified is marked inserted."""
         for c, ref in ou.note_refs:
+            if span is not None and not span[0] <= c < span[1]:
+                continue
             note = self.a_notes.get((ref.kind, str(ref.id)))
             if note is None or note in self.refs_done or self.twin.get(note) is not None:
                 continue
@@ -588,6 +608,24 @@ class _Editor:
                 inner.append(copy.deepcopy(c))
         ch.append(inner)
         ppr.append(ch)
+
+
+def _plan(segs, a: int) -> tuple[list, int, int]:
+    """The segments as (mode, a0, a1, b0, b1) ranges, the Original's from `a`, the Modified's from
+    0; with where each side ends."""
+    plan, b = [], 0
+    for s in segs:
+        n = len(s.t)
+        if s.m == "eq":
+            plan.append(("eq", a, a + n, b, b + n))
+            a, b = a + n, b + n
+        elif s.m == "del":
+            plan.append(("del", a, a + n, b, b))
+            a += n
+        else:
+            plan.append(("ins", a, a, b, b + n))
+            b += n
+    return plan, a, b
 
 
 def _max_id(roots) -> int:
