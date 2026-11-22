@@ -18,8 +18,9 @@ def read_text(s: str) -> Document:
 
 def compare_texts(a: str, b: str, *, ignore_case: bool = False) -> dict:
     d = compare(read_text(a), read_text(b), ignore_case=ignore_case, count_numbering=False).to_dict()
+    # a merged-away line is drawn within the merged line (its removed mark), not again on its own
     rows = [{"type": r["type"], "segments": _spaced([{"m": s["m"], "t": s["t"]} for s in r["segments"]])}
-            for r in d["changes"]]
+            for r in d["changes"] if not (r.get("join") == "merge" and not r["head"])]
     return {"summary": d["summary"], "rows": rows}
 
 

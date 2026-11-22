@@ -43,8 +43,13 @@ def side_items(items: list[Item], cmp: Comparison, side: str) -> list[Item]:
     their table location, so a shared table takes the revised-side table's geometry on every
     side, exactly as the blackline does (see tables.py); only the text is the side's own."""
     if check_side(side) == "original":
+        # a split's original paragraph is laid out once, with its head row
         return [replace(it, para=cmp.a_units[it.row.oi].para)
-                for it in items if it.row is not None and it.row.oi is not None]
+                for it in items if it.row is not None and it.row.oi is not None
+                and not (it.row.join == "split" and not it.row.head)]
+    # a merged-away original piece is only on the original side
+    if any(it.row is not None and it.row.join == "merge" and not it.row.head for it in items):
+        items = [it for it in items if not (it.row is not None and it.row.join == "merge" and not it.row.head)]
     if side == "modified":
         return [it for it in items if it.row is None or it.row.ni is not None]
     return items

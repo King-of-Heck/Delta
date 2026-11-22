@@ -155,6 +155,8 @@ def reference_summary(cmp: Comparison) -> dict:
     for r in body_rows(cmp):
         if r.num_changed:
             s["numbering"] += 1
+        if r.join and r.head:
+            s["splits" if r.join == "split" else "merges"] += 1
         if r.type == "equal":
             if r.fmt_changed:
                 s["formatting"] += 1

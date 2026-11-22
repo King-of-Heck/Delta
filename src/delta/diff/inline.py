@@ -28,6 +28,10 @@ class Seg:
     t: str
     b: bool = False
     cid: int | None = None      # the passage number of a marked segment (spec 14.2); None on equal text
+    pm: bool = False            # a paragraph mark inserted / removed (t is the drawn PM): in neither text
+
+
+PM = "¶"                   # how an inserted or removed paragraph mark is drawn
 
 
 def _in_runs(runs, i: int) -> bool:

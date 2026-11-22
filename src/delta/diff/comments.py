@@ -51,7 +51,7 @@ def _seg_overlap(row, offset: int, end_offset: int | None, mode: str) -> bool:
     "changed" row, walking that side's own text (its eq + mode segments only)?"""
     pos = 0
     for s in row.segments:
-        if s.m not in ("eq", mode):
+        if s.pm or s.m not in ("eq", mode):          # a paragraph mark is in neither text
             continue
         seg_start, seg_end = pos, pos + len(s.t)
         if s.m == mode:

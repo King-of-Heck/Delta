@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..diff.changes import Comparison, Row
+from ..diff.inline import whole_segs
 from ..diff.units import Unit
 
 
@@ -56,6 +57,9 @@ class Piece:
 
 
 def visible(row: Row, opts: LayoutOptions) -> bool:
+    if row.join and row.type == "changed":
+        # unchanged words and a paragraph mark: shown with unchanged text or with that mark's kind
+        return opts.show_equal or (opts.show_insertions if row.join == "split" else opts.show_deletions)
     if row.type == "equal":
         return opts.show_equal or (row.fmt_changed and opts.show_formatting) or row.num_changed
     if row.type == "inserted":
@@ -159,8 +163,19 @@ def row_pieces(cmp: Comparison, row: Row, opts: LayoutOptions) -> list[Piece]:
     oa = ob = 0
     out: list[Piece] = []
     segs = row.segments
+    if row.join and opts.side == "original":
+        # one paragraph of a split or merge, drawn whole as the original has it
+        segs = whole_segs(ou.text, ou.bold_runs, "eq")
+        ru = None
     for k, seg in enumerate(segs):
         n = len(seg.t)
+        if seg.pm:
+            # an inserted / removed paragraph mark: drawn on the blackline only, in neither text
+            if opts.side == "blackline" and (opts.show_insertions if seg.m == "ins" else opts.show_deletions):
+                p = out[-1] if out else None
+                out.append(Piece(seg.t, seg.m, False, False, False, p.font if p else None, p.size if p else None,
+                                 cid=seg.cid))
+            continue
         if seg.m == "del":
             unit, start, oa, side = ou, oa, oa + n, "a"
             refs = [(o, ref, "a") for o, ref in ou.note_refs]
@@ -170,7 +185,7 @@ def row_pieces(cmp: Comparison, row: Row, opts: LayoutOptions) -> list[Piece]:
         else:
             unit, start, side = (ou, oa, "a") if opts.side == "original" else (ru, ob, "b")
             refs = [(o, ref, side) for o, ref in unit.note_refs]
-            if opts.side == "blackline" and ou is not None and ru is not None:
+            if opts.side == "blackline" and ou is not None and ru is not None and not row.join:
                 # shared text shows the revised marks; a note the revision dropped keeps its
                 # (deleted) mark where it stood, at the same offset of the shared text
                 refs += [(ob + (o - oa), ref, "a") for o, ref in ou.note_refs

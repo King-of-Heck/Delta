@@ -375,6 +375,10 @@ class _Editor:
         for k, row in enumerate(self.cmp.rows):
             ou = self.cmp.a_units[row.oi] if row.oi is not None else None
             ru = self.cmp.b_units[row.ni] if row.ni is not None else None
+            if row.join:
+                if row.head:
+                    self.join(k, row, ou, ru)
+                continue
             if row.type == "inserted":
                 self.mark_inserted(ru.para.xml)
             elif row.type == "deleted":
@@ -397,6 +401,54 @@ class _Editor:
             tr = next((a for a in p.iterancestors(_TR)), None)
             if tr is not None and tr not in trs:
                 self.row_mark(tr, "ins")
+
+    def join(self, k: int, head, ou, ru) -> None:
+        """A paragraph split with its words unchanged: each inserted paragraph mark marked (and the
+        space it took the place of put back deleted), empty paragraphs between the pieces too. A
+        merge, or a split whose pieces are not plain sibling paragraphs: the Original paragraphs
+        deleted whole and the Modified ones inserted whole."""
+        rows = self.cmp.rows
+        group = [head]
+        for r in rows[k + 1:]:
+            if r.join != head.join or r.head:
+                break
+            group.append(r)
+        bu, au = self.cmp.b_units, self.cmp.a_units
+        if head.join == "split":
+            ps = [bu[r.ni].para.xml for r in group]
+            between = []
+            for x, y in zip(ps, ps[1:]):
+                mid, nxt = [], x.getnext()
+                while nxt is not None and nxt is not y and nxt.tag == _P and not "".join(nxt.itertext()).strip():
+                    mid.append(nxt)
+                    nxt = nxt.getnext()
+                if nxt is not y:
+                    break
+                between.append(mid)
+            if len(between) == len(ps) - 1:
+                for r, x, mid in zip(group, ps, between):
+                    if r.gap:
+                        run = x.makeelement(_R, {})
+                        t = run.makeelement(_T, {_XML_SPACE: "preserve"})
+                        t.text = r.gap
+                        run.append(t)
+                        _as_deleted(run)
+                        x.append(run)
+                        _wrap(run, "del", self.attrs())
+                    for p in [x] + mid:
+                        _mark_rpr(p).insert(0, p.makeelement(wq("ins"), self.attrs()))
+                self.numbering(head, ou, ru)
+                return
+            olds, news = [au[head.oi]], [bu[r.ni] for r in group]
+        else:
+            olds, news = [au[r.oi] for r in group], [ru]
+        first = news[0].para.xml
+        for u in olds:
+            dup = self.copy(u.para.xml)
+            self.mark_deleted(dup)
+            first.addprevious(dup)
+        for u in news:
+            self.mark_inserted(u.para.xml)
 
     def changed(self, row, ou, ru) -> bool:
         """The word-level edit in place; False when the paragraph cannot be traced (marked whole)."""

@@ -56,6 +56,15 @@ class Row:
     cids: list[int] = field(default_factory=list)   # the row's passage numbers in reading order
     num_cid: int | None = None      # the numbering passage (a renumbered marker), when counted
     num_typed: bool = False         # both numbers were read from text (mixed.TYPED): counted whatever the option
+    # A paragraph split in two or more with its words unchanged ("split": one original paragraph,
+    # a row per revised piece) or the mirror ("merge": a row per original piece, one revised
+    # paragraph). The head row is the group's first. Split rows hold their revised piece's text,
+    # then an inserted paragraph mark (a `pm` segment) on every piece but the last. A merge's head
+    # holds the whole revised paragraph with a removed mark where each original piece ended; its
+    # other rows hold their original piece's text and are drawn on the original side only.
+    join: str | None = None
+    head: bool = False
+    gap: str = ""                   # split: the text between this piece and the next in the original
 
 
 def _shown(unit: Unit, a: int, b: int) -> str:
@@ -140,12 +149,16 @@ class Comparison:
         print a different number on each side; then "o" holds the original's text."""
         ou = self.a_units[r.oi] if r.oi is not None else None
         ru = self.b_units[r.ni] if r.ni is not None else None
+        if r.join == "merge" and not r.head:
+            ru = None                       # its text is its original piece's (drawn on that side only)
         oa = ob = 0
         out = []
         for s in r.segments:
             d = {"m": s.m, "t": s.t, "b": s.b, "cid": s.cid}
             n = len(s.t)
-            if s.m == "del":
+            if s.pm:                        # a paragraph mark: drawn, in neither text
+                d["pm"] = True
+            elif s.m == "del":
                 d["t"] = _shown(ou, oa, oa + n)
                 oa += n
             elif s.m == "ins":
@@ -153,7 +166,7 @@ class Comparison:
                 ob += n
             else:
                 d["t"] = _shown(ru or ou, ob if ru else oa, (ob if ru else oa) + n)
-                if ou is not None and ru is not None and (o := _shown(ou, oa, oa + n)) != d["t"]:
+                if ou is not None and ru is not None and not r.join and (o := _shown(ou, oa, oa + n)) != d["t"]:
                     d["o"] = o
                 oa += n
                 ob += n
@@ -171,6 +184,9 @@ class Comparison:
             "num_changed": r.num_changed, "fmt_changed": r.fmt_changed,
             "fmt_descs": [x.desc for x in r.fmt_ranges],
             "segments": self._segment_dicts(r),
+            # a split / merge row: its group, and its original paragraph's own text and number
+            **({"join": r.join, "head": r.head, "a": _shown(self.a_units[r.oi], 0, len(self.a_units[r.oi].text)),
+                "a_marker": self.a_units[r.oi].marker} if r.join else {}),
         }
 
     def _comment_dict(self, c) -> dict:

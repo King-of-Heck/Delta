@@ -27,7 +27,10 @@ def merged_items(cmp: Comparison) -> list[Item]:
     if cmp.b_doc is None or cmp.a_doc is None:
         raise ValueError("merged_items needs a Comparison from compare(a, b) (documents attached)")
     rows = cmp.rows
-    by_ni = {r.ni: k for k, r in enumerate(rows) if r.ni is not None}
+    by_ni: dict[int, int] = {}
+    for k, r in enumerate(rows):
+        if r.ni is not None:
+            by_ni.setdefault(r.ni, k)       # a merge's revised paragraph is laid out with its head row
     out: list[Item] = []
     state = {"emitted": 0, "section": 0}
 
@@ -36,7 +39,8 @@ def merged_items(cmp: Comparison) -> list[Item]:
         # them that have not been placed yet go here, in row order.
         while state["emitted"] < upto:
             r = rows[state["emitted"]]
-            if r.ni is None:
+            if r.ni is None or (r.join == "merge" and not r.head):
+                # a deleted row, or a merged-away original piece (drawn on the original side only)
                 u = cmp.a_units[r.oi]
                 out.append(Item(u.para, u.loc, "a", state["section"], r, state["emitted"], u.stream, u.note, u.part))
             state["emitted"] += 1

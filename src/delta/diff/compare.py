@@ -4,7 +4,7 @@ from __future__ import annotations
 from ..model import Document
 from .changes import Comparison, Passage, Row, empty_summary, row_passages
 from .fmt import fmt_diff
-from .inline import safe_inline, whole_segs
+from .inline import PM, Seg, safe_inline, whole_segs
 from .lcs import lcs_ops
 from .text import categorize, content_tokens, norm, sim, sim_upper
 from .units import Unit, units
@@ -65,14 +65,17 @@ def compare_units(orig: list[Unit], rev: list[Unit], *, ignore_case: bool = Fals
 
     rows: list[Row] = []
     for a0, a1, b0, b1 in ((0, a_split, 0, b_split), (a_split, len(orig), b_split, len(rev))):
-        _append_rows(orig, rev, o_t, r_t, o_tok, r_tok, a0, a1, b0, b1, rows, ignore_format)
+        _append_rows(orig, rev, o_t, r_t, o_tok, r_tok, a0, a1, b0, b1, rows, ignore_format, ignore_case)
 
     summary = empty_summary()
     passages: list[Passage] = []
     for k, r in enumerate(rows):
         if r.num_changed:
             summary["numbering"] += 1        # every renumbered row, counted or not: the gate's key
-        if r.type == "equal":
+        if r.join:
+            if r.head:
+                summary["splits" if r.join == "split" else "merges"] += 1
+        elif r.type == "equal":
             if r.fmt_changed:
                 summary["formatting"] += 1
         else:
@@ -88,7 +91,8 @@ def compare_units(orig: list[Unit], rev: list[Unit], *, ignore_case: bool = Fals
 
 
 def _append_rows(orig: list[Unit], rev: list[Unit], o_t: list[str], r_t: list[str], o_tok, r_tok,
-                 a0: int, a1: int, b0: int, b1: int, rows: list[Row], ignore_format: bool = False) -> None:
+                 a0: int, a1: int, b0: int, b1: int, rows: list[Row], ignore_format: bool = False,
+                 ignore_case: bool = False) -> None:
     """The rows of orig[a0:a1] vs rev[b0:b1], appended to `rows` with indices into the full
     (unsliced) orig/rev -- one independent LCS problem, so nothing outside the range can affect
     it, or be affected by it."""
@@ -123,10 +127,21 @@ def _append_rows(orig: list[Unit], rev: list[Unit], o_t: list[str], r_t: list[st
             if s + 1 < len(segs) and segs[s + 1][0] == "delete":
                 dels = [i for i, _ in segs[s + 1][1]]
                 s += 1
+        # a paragraph split (or joined) with its words unchanged: one row per piece, set aside
+        # before the pairing below; each group's rows go where its first original paragraph stood
+        groups = _joins(orig, rev, dels, ins, ignore_case)
+        grouped_a = {i for g in groups for i in g[1]}
+        grouped_b = {j for g in groups for j in g[2]}
+        first_of = {g[1][0]: g for g in groups}
+        ins =[ji for ji in ins if ji not in grouped_b]
         # both sets mirror the reference engine; kept identical on purpose
         used: set[int] = set()
         paired: list[tuple[int, int]] = []
         for di in dels:
+            if di in grouped_a:
+                if di in first_of:
+                    paired.append((di, -2))
+                continue
             best, bs = -1, 0.0
             for ji in ins:
                 if ji in used or rev[ji].stream != orig[di].stream:
@@ -143,7 +158,9 @@ def _append_rows(orig: list[Unit], rev: list[Unit], o_t: list[str], r_t: list[st
                 paired.append((di, -1))
         done: set[int] = set()
         for di, ji in paired:
-            if ji >= 0:
+            if ji == -2:
+                rows.extend(_join_rows(orig, rev, first_of[di]))
+            elif ji >= 0:
                 ou, ru = orig[di], rev[ji]
                 row = Row("changed", di, ji, safe_inline(ou.text, ru.text, ou.bold_runs, ru.bold_runs),
                           cat=categorize(o_t[di], r_t[ji]))
@@ -158,6 +175,121 @@ def _append_rows(orig: list[Unit], rev: list[Unit], o_t: list[str], r_t: list[st
                 ru = rev[ji]
                 rows.append(Row("inserted", None, ji, whole_segs(ru.text, ru.bold_runs, "ins")))
         s += 1
+
+
+JOIN_CAP = 250_000          # dels x ins of one changed block past which splits are not looked for
+
+
+def _fits(target: str, pieces: list[str]) -> list[str] | None:
+    """The gaps ("" or " ") between `pieces` when they spell `target` exactly, one after another
+    with at most one space between two of them; else None."""
+    pos, gaps = 0, []
+    for k, piece in enumerate(pieces):
+        if k:
+            gap = " " if target.startswith(" ", pos) and not piece.startswith(" ") else ""
+            gaps.append(gap)
+            pos += len(gap)
+        if not piece or not target.startswith(piece, pos):
+            return None
+        pos += len(piece)
+    return gaps if pos == len(target) else None
+
+
+def _same_place(us: list[Unit]) -> bool:
+    """The pieces of one paragraph: one stream, one note, one header/footer part, one table cell."""
+    def key(u: Unit):
+        return (u.stream, u.note, u.part, None if u.loc is None else (u.loc.ti, u.loc.ri, u.loc.ci))
+    return all(key(u) == key(us[0]) for u in us[1:])
+
+
+def _joins(orig: list[Unit], rev: list[Unit], dels: list[int], ins: list[int], ignore_case: bool) -> list[tuple]:
+    """The splits and merges of one changed block: (kind, original indices, revised indices, gaps).
+    A split is one deleted paragraph whose text is spelled exactly by two or more consecutive
+    inserted ones (a space between them at most, or nothing); a merge is the mirror. Exact text
+    only: a piece that also changed a word leaves the block to the pairing, as before."""
+    if not dels or not ins or len(dels) * len(ins) > JOIN_CAP:
+        return []
+
+    def text(u: Unit) -> str:
+        return u.text.lower() if ignore_case else u.text
+
+    out: list[tuple] = []
+    taken_a: set[int] = set()
+    taken_b: set[int] = set()
+    for kind, ones, many, us_one, us_many in (("split", dels, ins, orig, rev), ("merge", ins, dels, rev, orig)):
+        taken_one, taken_many = (taken_a, taken_b) if kind == "split" else (taken_b, taken_a)
+        for x in ones:
+            if x in taken_one:
+                continue
+            target = text(us_one[x])
+            for p, y in enumerate(many):
+                if y in taken_many or not target.startswith(text(us_many[y])):
+                    continue
+                run = [y]
+                for z in many[p + 1:]:
+                    if z != run[-1] + 1 or z in taken_many:
+                        break
+                    run.append(z)
+                    if sum(len(text(us_many[i])) for i in run) > len(target):
+                        break
+                found = None
+                for n in range(2, len(run) + 1):
+                    pieces = [us_many[i] for i in run[:n]]
+                    gaps = _fits(target, [text(u) for u in pieces])
+                    if gaps is not None and _same_place(pieces + [us_one[x]]):
+                        found = (run[:n], gaps)
+                        break
+                if found:
+                    pieces, gaps = found
+                    taken_one.add(x)
+                    taken_many.update(pieces)
+                    out.append((kind, [x], pieces, gaps) if kind == "split" else (kind, pieces, [x], gaps))
+                    break
+    return out
+
+
+def _join_rows(orig: list[Unit], rev: list[Unit], group: tuple) -> list[Row]:
+    kind, ois, nis, gaps = group
+    rows: list[Row] = []
+    if kind == "split":
+        ou = orig[ois[0]]
+        for k, j in enumerate(nis):
+            ru = rev[j]
+            last = k == len(nis) - 1
+            segs = whole_segs(ru.text, ru.bold_runs, "eq") + ([] if last else [Seg("ins", PM, pm=True)])
+            row = Row("equal" if last else "changed", ois[0], j, segs, cat=None if last else "content",
+                      join="split", head=k == 0, gap="" if last else gaps[k])
+            if k == 0:
+                _mark_num(row, ou, ru)
+            rows.append(row)
+        return rows
+    ru = rev[nis[0]]
+    # the revised text cut where each original piece ended, a removed mark at each cut
+    ends, at = [], 0
+    for k, i in enumerate(ois[:-1]):
+        at += len(orig[i].text)
+        ends.append(at)
+        at += len(gaps[k])
+    out: list[Seg] = []
+    pos = 0
+    for s in whole_segs(ru.text, ru.bold_runs, "eq"):
+        start, end = pos, pos + len(s.t)
+        cut = start
+        for e in ends:
+            if start < e <= end:
+                out.append(Seg("eq", ru.text[cut:e], s.b))
+                out.append(Seg("del", PM, pm=True))
+                cut = e
+        if end > cut:
+            out.append(Seg("eq", ru.text[cut:end], s.b))
+        pos = end
+    head = Row("changed", ois[0], nis[0], out, cat="content", join="merge", head=True)
+    _mark_num(head, orig[ois[0]], ru)
+    rows.append(head)
+    for i in ois[1:]:
+        ou = orig[i]
+        rows.append(Row("equal", i, nis[0], whole_segs(ou.text, ou.bold_runs, "eq"), join="merge"))
+    return rows
 
 
 def _note_index(rows: list[Row], orig: list[Unit], rev: list[Unit]) -> tuple[dict, dict]:

@@ -1,5 +1,18 @@
 # Delta changelog
 
+## Unreleased
+
+- A paragraph split in two (or more) with its words unchanged is shown as the paragraph mark that
+  was added, a blue "¶" where the break now is, and counted as one insertion; paragraphs joined
+  into one show a struck "¶" where each break was, one deletion each. Before, the first part was
+  shown deleted and inserted again. The Original pane shows the paragraph as the original has it,
+  the Modified pane as the modified has it. An empty paragraph between the parts does not stop it.
+  The words must match exactly (case aside under Ignore case): a part that also changed a word is
+  compared as before. The pasted-text redline, Copy and the change list show the same; the Word
+  document with tracked changes marks the inserted paragraph mark (a join is still marked as the
+  old paragraphs deleted and the new one inserted). Comparing Word with PDF, a Word paragraph with
+  line breaks that the PDF reads as separate lines now counts one change instead of two.
+
 ## v2.13.3 — Replaced words kept apart (2026-11-10)
 
 - Where a word is replaced by another, the redline puts a plain, unmarked space between the
