@@ -1,6 +1,6 @@
 # Delta changelog
 
-## Unreleased
+## v2.14.0 — Paragraph splits (2026-11-24)
 
 - A paragraph split in two (or more) with its words unchanged is shown as the paragraph mark that
   was added, a blue "¶" where the break now is, and counted as one insertion; paragraphs joined
